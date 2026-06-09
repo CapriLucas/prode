@@ -43,7 +43,7 @@ export type ConsensusMarket = {
 
 export type MatchOddsSummary = {
   matchId: string;
-  source: "mock-provider";
+  source: "mock-provider" | "the-odds-api";
   generatedAt: string;
   expectedBookmakers: string[];
   markets: ConsensusMarket[];

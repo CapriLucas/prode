@@ -16,18 +16,37 @@ export function getOddsSummary(matchId: string): MatchOddsSummary | null {
     return null;
   }
 
+  return getOddsSummaryFromBookmakers({
+    matchId,
+    source: "mock-provider",
+    expectedBookmakers,
+    bookmakers,
+  });
+}
+
+export function getOddsSummaryFromBookmakers({
+  matchId,
+  source,
+  expectedBookmakers: expected,
+  bookmakers,
+}: {
+  matchId: string;
+  source: MatchOddsSummary["source"];
+  expectedBookmakers: string[];
+  bookmakers: BookmakerOdds[];
+}): MatchOddsSummary {
   const markets = [
-    buildConsensusMarket(bookmakers, "match_winner"),
-    buildConsensusMarket(bookmakers, "correct_score"),
+    buildConsensusMarket(bookmakers, "match_winner", expected),
+    buildConsensusMarket(bookmakers, "correct_score", expected),
   ].filter((market): market is ConsensusMarket => Boolean(market));
 
   const warnings = buildWarnings(markets);
 
   return {
     matchId,
-    source: "mock-provider",
+    source,
     generatedAt: new Date().toISOString(),
-    expectedBookmakers,
+    expectedBookmakers: expected,
     markets,
     warnings,
   };
@@ -44,6 +63,7 @@ export function impliedProbability(odds: number): number {
 function buildConsensusMarket(
   bookmakers: BookmakerOdds[],
   marketKey: MarketKey,
+  expected: string[],
 ): ConsensusMarket | null {
   const entries = bookmakers
     .map((bookmaker) => ({
@@ -92,7 +112,7 @@ function buildConsensusMarket(
   );
 
   const lastUpdatedAt = latestDate(entries.map((entry) => entry.bookmaker.updatedAt));
-  const missingBookmakers = expectedBookmakers.filter(
+  const missingBookmakers = expected.filter(
     (bookmaker) => !entries.some((entry) => entry.bookmaker.bookmaker === bookmaker),
   );
 
@@ -101,7 +121,7 @@ function buildConsensusMarket(
     scope: mostCommon(entries.map((entry) => entry.market?.scope ?? "90_minutes")),
     outcomes,
     bookmakerCount: entries.length,
-    expectedBookmakerCount: expectedBookmakers.length,
+    expectedBookmakerCount: expected.length,
     lastUpdatedAt,
     incomplete: entries.length < expectedBookmakers.length,
     stale: entries.some((entry) => isStale(entry.bookmaker.updatedAt)),

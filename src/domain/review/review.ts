@@ -1,4 +1,4 @@
-import { getOddsSummary } from "@/domain/odds/odds";
+import { getPersistedOddsSummary } from "@/domain/odds/repository";
 import { recommendScoreByExpectedPoints } from "@/domain/predictions/scoring";
 import type { ScoreRecommendationResult } from "@/domain/predictions/types";
 import type { Match } from "@/domain/matches/types";
@@ -10,9 +10,10 @@ export type MatchReviewItem = {
   hasWarning: boolean;
 };
 
-export function buildMatchReviewItems(matches: Match[]): MatchReviewItem[] {
-  return matches.map((match) => {
-    const odds = getOddsSummary(match.id);
+export async function buildMatchReviewItems(matches: Match[]): Promise<MatchReviewItem[]> {
+  return Promise.all(
+    matches.map(async (match) => {
+      const odds = await getPersistedOddsSummary(match.id);
     const winnerMarket = odds?.markets.find((market) => market.key === "match_winner");
     const correctScoreMarket = odds?.markets.find((market) => market.key === "correct_score");
     const recommendation = recommendScoreByExpectedPoints({
@@ -20,16 +21,17 @@ export function buildMatchReviewItems(matches: Match[]): MatchReviewItem[] {
       correctScoreMarket,
     });
 
-    return {
-      matchId: match.id,
-      recommendation,
-      signature: buildRecommendationSignature(recommendation),
-      hasWarning:
-        !recommendation.available ||
-        recommendation.warnings.length > 0 ||
-        (recommendation.available && recommendation.usedFallback),
-    };
-  });
+      return {
+        matchId: match.id,
+        recommendation,
+        signature: buildRecommendationSignature(recommendation),
+        hasWarning:
+          !recommendation.available ||
+          recommendation.warnings.length > 0 ||
+          (recommendation.available && recommendation.usedFallback),
+      };
+    }),
+  );
 }
 
 function buildRecommendationSignature(recommendation: ScoreRecommendationResult): string {

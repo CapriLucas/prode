@@ -124,7 +124,10 @@ specs/
 
 ```text
 ODDS_API_KEY=
-ODDS_API_BASE_URL=
+ODDS_API_BASE_URL=https://api.the-odds-api.com
+ODDS_API_SPORT_KEY=soccer_fifa_world_cup
+ODDS_API_REGIONS=us,uk,eu
+ODDS_API_MARKETS=h2h,correct_score
 DATABASE_URL=postgresql://...
 ```
 
@@ -132,6 +135,14 @@ Reglas:
 - `.env.local` no se commitea.
 - Agregar `.env.example` cuando se cree la app.
 - La app debe funcionar sin API key usando datos mock o seed para desarrollo basico.
+
+## Operacion de datos reales
+
+- Ejecutar `pnpm db:migrate` contra PostgreSQL antes de usar la app en Coolify.
+- Ejecutar `POST /api/matches` para sembrar partidos base si la tabla esta vacia.
+- Ejecutar `POST /api/sync/odds` para traer odds reales desde The Odds API cuando `ODDS_API_KEY` este configurada.
+- Si `ODDS_API_KEY` no esta configurada, la app sigue usando datos mock.
+- Si `DATABASE_URL` no esta configurada, la app funciona con seeds y persistencia local del navegador.
 
 ## Decisiones explicitas
 

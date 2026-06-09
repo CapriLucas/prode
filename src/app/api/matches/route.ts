@@ -1,10 +1,21 @@
 import { NextResponse } from "next/server";
-import { getMatches } from "@/domain/matches/matches";
+import { getPersistedMatches, seedMatchesIfEmpty } from "@/domain/matches/repository";
 
-export function GET() {
+export async function GET() {
+  const matches = await getPersistedMatches();
+
   return NextResponse.json({
-    source: "seed",
+    source: process.env.DATABASE_URL ? "postgres-or-seed" : "seed",
     updatedAt: new Date().toISOString(),
-    matches: getMatches(),
+    matches,
+  });
+}
+
+export async function POST() {
+  const result = await seedMatchesIfEmpty();
+
+  return NextResponse.json({
+    ...result,
+    updatedAt: new Date().toISOString(),
   });
 }

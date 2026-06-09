@@ -30,6 +30,7 @@ import type {
 import type { MatchReviewItem } from "@/domain/review/review";
 
 type MatchBrowserProps = {
+  initialCompletionRecords: Record<string, CompletionRecord>;
   matches: Match[];
   phases: Array<MatchPhase | "Todas">;
   reviewItems: MatchReviewItem[];
@@ -43,6 +44,7 @@ type CompletionRecord = {
 };
 
 export function MatchBrowser({
+  initialCompletionRecords,
   matches: initialMatches,
   phases,
   reviewItems,
@@ -69,7 +71,7 @@ export function MatchBrowser({
   const [statusFilter, setStatusFilter] = useState<ReviewStatusFilter>("todos");
   const [sortBy, setSortBy] = useState<ReviewSort>("fecha");
   const [completionRecords, setCompletionRecords] = useState<Record<string, CompletionRecord>>(
-    () => readCompletionRecords(),
+    () => ({ ...initialCompletionRecords, ...readCompletionRecords() }),
   );
   const [copiedMatchId, setCopiedMatchId] = useState("");
 
@@ -241,22 +243,25 @@ export function MatchBrowser({
 
   function toggleCompleted(matchId: string) {
     const review = reviewByMatchId.get(matchId);
+    const isCurrentlyCompleted = Boolean(completionRecords[matchId]?.completed);
+    const nextRecord = {
+      completed: !isCurrentlyCompleted,
+      signature: review?.signature ?? "sin-recomendacion",
+    };
 
     setCompletionRecords((current) => {
-      const isCompleted = Boolean(current[matchId]?.completed);
       const next = { ...current };
 
-      if (isCompleted) {
+      if (isCurrentlyCompleted) {
         delete next[matchId];
       } else {
-        next[matchId] = {
-          completed: true,
-          signature: review?.signature ?? "sin-recomendacion",
-        };
+        next[matchId] = nextRecord;
       }
 
       return next;
     });
+
+    persistCompletion(matchId, nextRecord);
   }
 
   async function copyRecommendedScore(matchId: string) {
@@ -1283,4 +1288,20 @@ function readCompletionRecords(): Record<string, CompletionRecord> {
   } catch {
     return {};
   }
+}
+
+function persistCompletion(matchId: string, record: CompletionRecord) {
+  fetch("/api/completions", {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      matchId,
+      completed: record.completed,
+      signature: record.signature,
+    }),
+  }).catch(() => {
+    // The local optimistic state remains available through localStorage fallback.
+  });
 }

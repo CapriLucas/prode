@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getMatches } from "@/domain/matches/matches";
-import { getOddsSummary } from "@/domain/odds/odds";
+import { getPersistedMatches } from "@/domain/matches/repository";
+import { getPersistedOddsSummary } from "@/domain/odds/repository";
 
-export function GET(request: NextRequest) {
+export async function GET(request: NextRequest) {
   const matchId = request.nextUrl.searchParams.get("matchId");
 
   if (!matchId) {
@@ -12,7 +12,7 @@ export function GET(request: NextRequest) {
     );
   }
 
-  const match = getMatches().find((item) => item.id === matchId);
+  const match = (await getPersistedMatches()).find((item) => item.id === matchId);
 
   if (!match) {
     return NextResponse.json(
@@ -21,7 +21,7 @@ export function GET(request: NextRequest) {
     );
   }
 
-  const summary = getOddsSummary(matchId);
+  const summary = await getPersistedOddsSummary(matchId);
 
   if (!summary) {
     return NextResponse.json(

@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getMatches } from "@/domain/matches/matches";
-import { getOddsSummary } from "@/domain/odds/odds";
+import { getPersistedMatches } from "@/domain/matches/repository";
+import { getPersistedOddsSummary } from "@/domain/odds/repository";
 import { predictCorrectScoreFromMarket } from "@/domain/predictions/correct-score";
 
-export function GET(request: NextRequest) {
+export async function GET(request: NextRequest) {
   const matchId = request.nextUrl.searchParams.get("matchId");
 
   if (!matchId) {
@@ -13,7 +13,7 @@ export function GET(request: NextRequest) {
     );
   }
 
-  const match = getMatches().find((item) => item.id === matchId);
+  const match = (await getPersistedMatches()).find((item) => item.id === matchId);
 
   if (!match) {
     return NextResponse.json(
@@ -22,7 +22,7 @@ export function GET(request: NextRequest) {
     );
   }
 
-  const odds = getOddsSummary(matchId);
+  const odds = await getPersistedOddsSummary(matchId);
   const market = odds?.markets.find((item) => item.key === "correct_score");
 
   return NextResponse.json({
