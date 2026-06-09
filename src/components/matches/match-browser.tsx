@@ -22,6 +22,7 @@ import type { Match, MatchPhase } from "@/domain/matches/types";
 import type { ConsensusMarket, MatchOddsSummary } from "@/domain/odds/types";
 import type {
   CorrectScorePredictionResult,
+  ScoreRecommendationResult,
   WinnerPredictionResult,
 } from "@/domain/predictions/types";
 
@@ -50,6 +51,9 @@ export function MatchBrowser({
   const [correctScorePrediction, setCorrectScorePrediction] =
     useState<CorrectScorePredictionResult | null>(null);
   const [correctScoreError, setCorrectScoreError] = useState("");
+  const [finalRecommendation, setFinalRecommendation] =
+    useState<ScoreRecommendationResult | null>(null);
+  const [finalRecommendationError, setFinalRecommendationError] = useState("");
 
   const dates = useMemo(
     () => Array.from(new Set(matches.map((match) => match.startsAt.slice(0, 10)))).sort(),
@@ -87,13 +91,16 @@ export function MatchBrowser({
       setOddsError("");
       setWinnerError("");
       setCorrectScoreError("");
+      setFinalRecommendationError("");
 
       try {
-        const [oddsResponse, winnerResponse, correctScoreResponse] = await Promise.all([
-          fetch(`/api/odds?matchId=${matchId}`),
-          fetch(`/api/predictions/winner?matchId=${matchId}`),
-          fetch(`/api/predictions/correct-score?matchId=${matchId}`),
-        ]);
+        const [oddsResponse, winnerResponse, correctScoreResponse, finalResponse] =
+          await Promise.all([
+            fetch(`/api/odds?matchId=${matchId}`),
+            fetch(`/api/predictions/winner?matchId=${matchId}`),
+            fetch(`/api/predictions/correct-score?matchId=${matchId}`),
+            fetch(`/api/predictions/final-score?matchId=${matchId}`),
+          ]);
 
         if (!oddsResponse.ok) {
           throw new Error("No se pudieron cargar las probabilidades");
@@ -107,6 +114,10 @@ export function MatchBrowser({
           throw new Error("No se pudo cargar el resultado exacto");
         }
 
+        if (!finalResponse.ok) {
+          throw new Error("No se pudo cargar la recomendacion final");
+        }
+
         const oddsPayload = (await oddsResponse.json()) as MatchOddsSummary;
         const winnerPayload = (await winnerResponse.json()) as {
           prediction: WinnerPredictionResult;
@@ -114,20 +125,26 @@ export function MatchBrowser({
         const correctScorePayload = (await correctScoreResponse.json()) as {
           prediction: CorrectScorePredictionResult;
         };
+        const finalPayload = (await finalResponse.json()) as {
+          recommendation: ScoreRecommendationResult;
+        };
 
         if (!cancelled) {
           setOdds(oddsPayload);
           setWinnerPrediction(winnerPayload.prediction);
           setCorrectScorePrediction(correctScorePayload.prediction);
+          setFinalRecommendation(finalPayload.recommendation);
         }
       } catch {
         if (!cancelled) {
           setOdds(null);
           setWinnerPrediction(null);
           setCorrectScorePrediction(null);
+          setFinalRecommendation(null);
           setOddsError("No se pudieron cargar las probabilidades.");
           setWinnerError("No se pudo cargar la recomendacion de ganador/empate.");
           setCorrectScoreError("No se pudo cargar la recomendacion de resultado exacto.");
+          setFinalRecommendationError("No se pudo cargar la recomendacion final.");
         }
       } finally {
         if (!cancelled) {
@@ -438,6 +455,8 @@ export function MatchBrowser({
                 winnerPrediction={winnerPrediction}
                 correctScoreError={correctScoreError}
                 correctScorePrediction={correctScorePrediction}
+                finalRecommendation={finalRecommendation}
+                finalRecommendationError={finalRecommendationError}
               />
             </div>
           ) : (
@@ -460,6 +479,8 @@ function OddsPanel({
   winnerPrediction,
   correctScoreError,
   correctScorePrediction,
+  finalRecommendation,
+  finalRecommendationError,
 }: {
   isLoading: boolean;
   odds: MatchOddsSummary | null;
@@ -469,6 +490,8 @@ function OddsPanel({
   winnerPrediction: WinnerPredictionResult | null;
   correctScoreError: string;
   correctScorePrediction: CorrectScorePredictionResult | null;
+  finalRecommendation: ScoreRecommendationResult | null;
+  finalRecommendationError: string;
 }) {
   const matchWinner = odds?.markets.find((market) => market.key === "match_winner");
   const correctScore = odds?.markets.find((market) => market.key === "correct_score");
@@ -507,6 +530,10 @@ function OddsPanel({
 
       {!isLoading && !oddsError && odds ? (
         <div className="space-y-4">
+          <FinalRecommendationCard
+            error={finalRecommendationError}
+            recommendation={finalRecommendation}
+          />
           <WinnerPredictionCard error={winnerError} prediction={winnerPrediction} />
           <CorrectScorePredictionCard
             error={correctScoreError}
@@ -544,6 +571,144 @@ function OddsPanel({
         </div>
       ) : null}
     </section>
+  );
+}
+
+function FinalRecommendationCard({
+  error,
+  recommendation,
+}: {
+  error: string;
+  recommendation: ScoreRecommendationResult | null;
+}) {
+  if (error) {
+    return (
+      <div className="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+        {error}
+      </div>
+    );
+  }
+
+  if (!recommendation) {
+    return null;
+  }
+
+  if (!recommendation.available) {
+    return (
+      <div className="rounded-lg border border-[var(--line)] bg-slate-50 p-4">
+        <h4 className="text-sm font-semibold">Recomendación final</h4>
+        <p className="mt-2 text-sm text-[var(--muted)]">{recommendation.reason}</p>
+        {recommendation.warnings.map((warning) => (
+          <p className="mt-2 text-xs text-[var(--warning)]" key={warning}>
+            {warning}
+          </p>
+        ))}
+      </div>
+    );
+  }
+
+  const scopeLabel =
+    recommendation.scope === "includes_extra_time" ? "Incluye prorroga" : "Solo 90 minutos";
+
+  return (
+    <div className="rounded-lg border border-zinc-300 bg-zinc-950 p-4 text-white">
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div>
+          <h4 className="text-sm font-semibold">Recomendación final para el prode</h4>
+          <p className="mt-1 text-xs text-zinc-300">{scopeLabel}</p>
+        </div>
+        {recommendation.usedFallback ? (
+          <span className="rounded-md bg-amber-200 px-2 py-1 text-xs font-semibold text-amber-950">
+            Simple
+          </span>
+        ) : (
+          <span className="rounded-md bg-emerald-200 px-2 py-1 text-xs font-semibold text-emerald-950">
+            Optimizada
+          </span>
+        )}
+      </div>
+
+      <div className="rounded-md bg-white p-3 text-zinc-950">
+        <div className="text-xs font-medium text-zinc-500">Marcador recomendado</div>
+        <div className="mt-1 flex items-end justify-between gap-3">
+          <div className="text-4xl font-semibold">{recommendation.recommended.score}</div>
+          <div className="text-right">
+            <div className="text-xs text-zinc-500">Puntos esperados</div>
+            <div className="text-xl font-semibold">
+              {recommendation.recommended.expectedPoints.toFixed(2)}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <p className="mt-3 text-sm leading-6 text-zinc-100">{recommendation.explanation}</p>
+
+      <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+        <div className="rounded-md bg-white/10 p-2">
+          <div className="text-zinc-300">Signo</div>
+          <div className="mt-1 font-semibold">{recommendation.recommended.signLabel}</div>
+        </div>
+        <div className="rounded-md bg-white/10 p-2">
+          <div className="text-zinc-300">Prob. exacta</div>
+          <div className="mt-1 font-semibold">
+            {formatProbability(recommendation.recommended.exactProbability)}
+          </div>
+        </div>
+        <div className="rounded-md bg-white/10 p-2">
+          <div className="text-zinc-300">Prob. signo</div>
+          <div className="mt-1 font-semibold">
+            {formatProbability(recommendation.recommended.signProbability)}
+          </div>
+        </div>
+        <div className="rounded-md bg-white/10 p-2">
+          <div className="text-zinc-300">Exacto más probable</div>
+          <div className="mt-1 font-semibold">{recommendation.mostLikelyExactScore.label}</div>
+        </div>
+      </div>
+
+      {recommendation.differsFromMostLikelyExact ? (
+        <div className="mt-3 rounded-md border border-amber-300 bg-amber-100 p-2 text-xs leading-5 text-amber-950">
+          La recomendación final difiere del marcador exacto más probable individualmente
+          porque prioriza el puntaje esperado total.
+        </div>
+      ) : null}
+
+      <div className="mt-3 space-y-2">
+        {recommendation.candidates.map((candidate) => (
+          <div key={candidate.score}>
+            <div className="mb-1 flex items-center justify-between gap-3 text-xs text-zinc-200">
+              <span>
+                {candidate.score} · {candidate.signLabel}
+              </span>
+              <span>{candidate.expectedPoints.toFixed(2)} pts esp.</span>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-white/20">
+              <div
+                className={`h-full rounded-full ${
+                  candidate.score === recommendation.recommended.score
+                    ? "bg-emerald-300"
+                    : "bg-white/50"
+                }`}
+                style={{ width: `${Math.max((candidate.expectedPoints / 6) * 100, 3)}%` }}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {recommendation.warnings.length ? (
+        <div className="mt-3 space-y-2">
+          {recommendation.warnings.map((warning) => (
+            <div
+              className="rounded-md border border-amber-300 bg-amber-100 p-2 text-xs leading-5 text-amber-950"
+              key={warning}
+            >
+              {warning}
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
   );
 }
 

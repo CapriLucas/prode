@@ -52,3 +52,34 @@ export type UnavailableCorrectScorePrediction = {
 export type CorrectScorePredictionResult =
   | CorrectScorePrediction
   | UnavailableCorrectScorePrediction;
+
+export type ScoreRecommendationCandidate = {
+  score: string;
+  sign: WinnerPickKey;
+  signLabel: string;
+  exactProbability: number;
+  signProbability: number;
+  expectedPoints: number;
+};
+
+export type ScoreRecommendation = {
+  available: true;
+  recommended: ScoreRecommendationCandidate;
+  candidates: ScoreRecommendationCandidate[];
+  mostLikelyExactScore: ConsensusOutcome;
+  differsFromMostLikelyExact: boolean;
+  usedFallback: boolean;
+  scope: MarketScope;
+  warnings: string[];
+  explanation: string;
+};
+
+export type UnavailableScoreRecommendation = {
+  available: false;
+  reason: string;
+  warnings: string[];
+};
+
+export type ScoreRecommendationResult =
+  | ScoreRecommendation
+  | UnavailableScoreRecommendation;
