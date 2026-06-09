@@ -12,13 +12,14 @@ import {
   Search,
   Trophy,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   filterMatches,
   formatDateLabel,
   formatMatchDate,
 } from "@/domain/matches/matches";
 import type { Match, MatchPhase } from "@/domain/matches/types";
+import type { ConsensusMarket, MatchOddsSummary } from "@/domain/odds/types";
 
 type MatchBrowserProps = {
   matches: Match[];
@@ -36,6 +37,10 @@ export function MatchBrowser({
   const [selectedMatchId, setSelectedMatchId] = useState(matches[0]?.id ?? "");
   const [sourceError, setSourceError] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [odds, setOdds] = useState<MatchOddsSummary | null>(null);
+  const [oddsError, setOddsError] = useState("");
+  const [isLoadingOdds, setIsLoadingOdds] = useState(false);
+  const [oddsRefreshKey, setOddsRefreshKey] = useState(0);
 
   const dates = useMemo(
     () => Array.from(new Set(matches.map((match) => match.startsAt.slice(0, 10)))).sort(),
@@ -60,6 +65,48 @@ export function MatchBrowser({
 
   const selectedMatch =
     matches.find((match) => match.id === selectedMatchId) ?? filteredMatches[0] ?? null;
+
+  useEffect(() => {
+    if (!selectedMatch?.id) {
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadOdds(matchId: string) {
+      setIsLoadingOdds(true);
+      setOddsError("");
+
+      try {
+        const response = await fetch(`/api/odds?matchId=${matchId}`);
+
+        if (!response.ok) {
+          throw new Error("No se pudieron cargar las probabilidades");
+        }
+
+        const payload = (await response.json()) as MatchOddsSummary;
+
+        if (!cancelled) {
+          setOdds(payload);
+        }
+      } catch {
+        if (!cancelled) {
+          setOdds(null);
+          setOddsError("No se pudieron cargar las probabilidades.");
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingOdds(false);
+        }
+      }
+    }
+
+    loadOdds(selectedMatch.id);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [oddsRefreshKey, selectedMatch?.id]);
 
   const statusCounts = useMemo(
     () => ({
@@ -343,9 +390,16 @@ export function MatchBrowser({
               ) : null}
 
               <div className="mt-5 rounded-md border border-[var(--line)] bg-slate-50 p-3 text-sm leading-6 text-[var(--muted)]">
-                La seleccion queda lista para consultar probabilidades y recomendaciones en
-                las siguientes historias.
+                Las probabilidades se obtienen desde un proveedor mock con formato de API.
+                Cuando exista una API key, esta misma vista puede conectarse al proveedor real.
               </div>
+
+              <OddsPanel
+                isLoading={isLoadingOdds}
+                odds={odds}
+                oddsError={oddsError}
+                onRetry={() => setOddsRefreshKey((value) => value + 1)}
+              />
             </div>
           ) : (
             <p className="text-sm text-[var(--muted)]">
@@ -356,6 +410,159 @@ export function MatchBrowser({
       </div>
     </section>
   );
+}
+
+function OddsPanel({
+  isLoading,
+  odds,
+  oddsError,
+  onRetry,
+}: {
+  isLoading: boolean;
+  odds: MatchOddsSummary | null;
+  oddsError: string;
+  onRetry: () => void;
+}) {
+  const matchWinner = odds?.markets.find((market) => market.key === "match_winner");
+  const correctScore = odds?.markets.find((market) => market.key === "correct_score");
+
+  return (
+    <section className="mt-5 border-t border-[var(--line)] pt-5">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <div>
+          <h3 className="text-base font-semibold">Probabilidades consenso</h3>
+          <p className="mt-1 text-xs text-[var(--muted)]">
+            Cuotas convertidas a probabilidad implicita y normalizadas.
+          </p>
+        </div>
+        <button
+          className="inline-flex h-9 items-center gap-2 rounded-md border border-[var(--line)] px-3 text-sm font-medium hover:bg-slate-50"
+          disabled={isLoading}
+          onClick={onRetry}
+          type="button"
+        >
+          <RefreshCw className={isLoading ? "animate-spin" : ""} size={15} aria-hidden="true" />
+          {isLoading ? "Cargando" : "Reintentar"}
+        </button>
+      </div>
+
+      {isLoading ? (
+        <div className="rounded-md border border-[var(--line)] bg-slate-50 p-4 text-sm text-[var(--muted)]">
+          Cargando probabilidades...
+        </div>
+      ) : null}
+
+      {!isLoading && oddsError ? (
+        <div className="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+          {oddsError}
+        </div>
+      ) : null}
+
+      {!isLoading && !oddsError && odds ? (
+        <div className="space-y-4">
+          <div className="rounded-md border border-[var(--line)] p-3 text-xs leading-5 text-[var(--muted)]">
+            Fuente: {odds.source}. Generado: {formatMatchDate(odds.generatedAt)}.
+          </div>
+
+          {odds.warnings.length ? (
+            <div className="space-y-2">
+              {odds.warnings.map((warning) => (
+                <div
+                  className="rounded-md border border-amber-200 bg-[var(--warning-bg)] p-3 text-xs leading-5 text-[var(--warning)]"
+                  key={warning}
+                >
+                  {warning}
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          {matchWinner ? (
+            <MarketCard market={matchWinner} title="Ganador / empate / ganador" />
+          ) : (
+            <MissingMarket label="ganador / empate / ganador" />
+          )}
+
+          {correctScore ? (
+            <MarketCard limit={5} market={correctScore} title="Resultado exacto" />
+          ) : (
+            <MissingMarket label="resultado exacto" />
+          )}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function MarketCard({
+  market,
+  title,
+  limit,
+}: {
+  market: ConsensusMarket;
+  title: string;
+  limit?: number;
+}) {
+  const visibleOutcomes = limit ? market.outcomes.slice(0, limit) : market.outcomes;
+  const scopeLabel =
+    market.scope === "includes_extra_time" ? "Incluye prorroga" : "Solo 90 minutos";
+
+  return (
+    <div className="rounded-lg border border-[var(--line)] bg-white p-4">
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div>
+          <h4 className="text-sm font-semibold">{title}</h4>
+          <p className="mt-1 text-xs text-[var(--muted)]">{scopeLabel}</p>
+        </div>
+        <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700">
+          {market.bookmakerCount}/{market.expectedBookmakerCount} casas
+        </span>
+      </div>
+
+      <div className="space-y-2">
+        {visibleOutcomes.map((outcome) => (
+          <div key={outcome.key}>
+            <div className="mb-1 flex items-center justify-between gap-3 text-xs">
+              <span className="font-medium">{outcome.label}</span>
+              <span className="text-[var(--muted)]">
+                {formatProbability(outcome.probability)} · cuota prom.{" "}
+                {outcome.averageOdds.toFixed(2)}
+              </span>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+              <div
+                className="h-full rounded-full bg-[var(--accent)]"
+                style={{ width: `${Math.max(outcome.probability * 100, 3)}%` }}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {market.incomplete || market.stale || market.scope === "90_minutes" ? (
+        <div className="mt-3 text-xs leading-5 text-[var(--muted)]">
+          {market.incomplete ? `Faltan: ${market.missingBookmakers.join(", ")}. ` : ""}
+          {market.stale ? "Hay datos antiguos. " : ""}
+          {market.scope === "90_minutes" ? "No equivale necesariamente al reglamento con prorroga." : ""}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function MissingMarket({ label }: { label: string }) {
+  return (
+    <div className="rounded-md border border-[var(--line)] bg-slate-50 p-4 text-sm text-[var(--muted)]">
+      No hay probabilidades disponibles para {label}.
+    </div>
+  );
+}
+
+function formatProbability(value: number): string {
+  return new Intl.NumberFormat("es-AR", {
+    style: "percent",
+    maximumFractionDigits: 1,
+  }).format(value);
 }
 
 function Metric({ label, value }: { label: string; value: number }) {
