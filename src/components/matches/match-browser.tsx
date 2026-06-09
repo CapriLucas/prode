@@ -20,6 +20,7 @@ import {
 } from "@/domain/matches/matches";
 import type { Match, MatchPhase } from "@/domain/matches/types";
 import type { ConsensusMarket, MatchOddsSummary } from "@/domain/odds/types";
+import type { WinnerPredictionResult } from "@/domain/predictions/types";
 
 type MatchBrowserProps = {
   matches: Match[];
@@ -41,6 +42,8 @@ export function MatchBrowser({
   const [oddsError, setOddsError] = useState("");
   const [isLoadingOdds, setIsLoadingOdds] = useState(false);
   const [oddsRefreshKey, setOddsRefreshKey] = useState(0);
+  const [winnerPrediction, setWinnerPrediction] = useState<WinnerPredictionResult | null>(null);
+  const [winnerError, setWinnerError] = useState("");
 
   const dates = useMemo(
     () => Array.from(new Set(matches.map((match) => match.startsAt.slice(0, 10)))).sort(),
@@ -76,23 +79,37 @@ export function MatchBrowser({
     async function loadOdds(matchId: string) {
       setIsLoadingOdds(true);
       setOddsError("");
+      setWinnerError("");
 
       try {
-        const response = await fetch(`/api/odds?matchId=${matchId}`);
+        const [oddsResponse, winnerResponse] = await Promise.all([
+          fetch(`/api/odds?matchId=${matchId}`),
+          fetch(`/api/predictions/winner?matchId=${matchId}`),
+        ]);
 
-        if (!response.ok) {
+        if (!oddsResponse.ok) {
           throw new Error("No se pudieron cargar las probabilidades");
         }
 
-        const payload = (await response.json()) as MatchOddsSummary;
+        if (!winnerResponse.ok) {
+          throw new Error("No se pudo cargar la recomendacion");
+        }
+
+        const oddsPayload = (await oddsResponse.json()) as MatchOddsSummary;
+        const winnerPayload = (await winnerResponse.json()) as {
+          prediction: WinnerPredictionResult;
+        };
 
         if (!cancelled) {
-          setOdds(payload);
+          setOdds(oddsPayload);
+          setWinnerPrediction(winnerPayload.prediction);
         }
       } catch {
         if (!cancelled) {
           setOdds(null);
+          setWinnerPrediction(null);
           setOddsError("No se pudieron cargar las probabilidades.");
+          setWinnerError("No se pudo cargar la recomendacion de ganador/empate.");
         }
       } finally {
         if (!cancelled) {
@@ -399,6 +416,8 @@ export function MatchBrowser({
                 odds={odds}
                 oddsError={oddsError}
                 onRetry={() => setOddsRefreshKey((value) => value + 1)}
+                winnerError={winnerError}
+                winnerPrediction={winnerPrediction}
               />
             </div>
           ) : (
@@ -417,11 +436,15 @@ function OddsPanel({
   odds,
   oddsError,
   onRetry,
+  winnerError,
+  winnerPrediction,
 }: {
   isLoading: boolean;
   odds: MatchOddsSummary | null;
   oddsError: string;
   onRetry: () => void;
+  winnerError: string;
+  winnerPrediction: WinnerPredictionResult | null;
 }) {
   const matchWinner = odds?.markets.find((market) => market.key === "match_winner");
   const correctScore = odds?.markets.find((market) => market.key === "correct_score");
@@ -460,6 +483,8 @@ function OddsPanel({
 
       {!isLoading && !oddsError && odds ? (
         <div className="space-y-4">
+          <WinnerPredictionCard error={winnerError} prediction={winnerPrediction} />
+
           <div className="rounded-md border border-[var(--line)] p-3 text-xs leading-5 text-[var(--muted)]">
             Fuente: {odds.source}. Generado: {formatMatchDate(odds.generatedAt)}.
           </div>
@@ -491,6 +516,111 @@ function OddsPanel({
         </div>
       ) : null}
     </section>
+  );
+}
+
+function WinnerPredictionCard({
+  error,
+  prediction,
+}: {
+  error: string;
+  prediction: WinnerPredictionResult | null;
+}) {
+  if (error) {
+    return (
+      <div className="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+        {error}
+      </div>
+    );
+  }
+
+  if (!prediction) {
+    return null;
+  }
+
+  if (!prediction.available) {
+    return (
+      <div className="rounded-lg border border-[var(--line)] bg-slate-50 p-4">
+        <h4 className="text-sm font-semibold">Predicción ganador/empate</h4>
+        <p className="mt-2 text-sm text-[var(--muted)]">{prediction.reason}</p>
+        {prediction.warnings.map((warning) => (
+          <p className="mt-2 text-xs text-[var(--warning)]" key={warning}>
+            {warning}
+          </p>
+        ))}
+      </div>
+    );
+  }
+
+  const scopeLabel =
+    prediction.scope === "includes_extra_time" ? "Incluye prorroga" : "Solo 90 minutos";
+
+  return (
+    <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4">
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div>
+          <h4 className="text-sm font-semibold text-emerald-950">
+            Predicción ganador/empate
+          </h4>
+          <p className="mt-1 text-xs text-emerald-800">{scopeLabel}</p>
+        </div>
+        <span className="rounded-md bg-white px-2 py-1 text-xs font-semibold text-emerald-800">
+          Confianza {prediction.confidence}
+        </span>
+      </div>
+
+      <div className="rounded-md bg-white p-3">
+        <div className="text-xs font-medium text-[var(--muted)]">Recomendación</div>
+        <div className="mt-1 flex items-end justify-between gap-3">
+          <div className="text-2xl font-semibold">{prediction.recommended.label}</div>
+          <div className="text-lg font-semibold">
+            {formatProbability(prediction.recommended.probability)}
+          </div>
+        </div>
+      </div>
+
+      <p className="mt-3 text-sm leading-6 text-emerald-950">{prediction.explanation}</p>
+
+      <div className="mt-3 space-y-2">
+        {prediction.alternatives.map((outcome) => (
+          <div key={outcome.key}>
+            <div className="mb-1 flex items-center justify-between gap-3 text-xs text-emerald-950">
+              <span>{outcome.label}</span>
+              <span>{formatProbability(outcome.probability)}</span>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-white">
+              <div
+                className={`h-full rounded-full ${
+                  outcome.key === prediction.recommended.key
+                    ? "bg-[var(--accent)]"
+                    : "bg-emerald-200"
+                }`}
+                style={{ width: `${Math.max(outcome.probability * 100, 3)}%` }}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {prediction.warnings.length ? (
+        <div className="mt-3 space-y-2">
+          {prediction.warnings.map((warning) => (
+            <div
+              className="rounded-md border border-amber-200 bg-[var(--warning-bg)] p-2 text-xs leading-5 text-[var(--warning)]"
+              key={warning}
+            >
+              {warning}
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      <div className="mt-3 text-xs leading-5 text-emerald-900">
+        Consenso usado: {prediction.bookmakerCount}/{prediction.expectedBookmakerCount} casas.
+        Ultima actualización:{" "}
+        {prediction.lastUpdatedAt ? formatMatchDate(prediction.lastUpdatedAt) : "sin dato"}.
+      </div>
+    </div>
   );
 }
 
