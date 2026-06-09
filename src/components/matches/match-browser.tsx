@@ -5,6 +5,8 @@ import {
   CalendarDays,
   Check,
   ChevronRight,
+  Clipboard,
+  ClipboardCheck,
   Clock3,
   Filter,
   MapPin,
@@ -25,15 +27,25 @@ import type {
   ScoreRecommendationResult,
   WinnerPredictionResult,
 } from "@/domain/predictions/types";
+import type { MatchReviewItem } from "@/domain/review/review";
 
 type MatchBrowserProps = {
   matches: Match[];
   phases: Array<MatchPhase | "Todas">;
+  reviewItems: MatchReviewItem[];
+};
+
+type ReviewStatusFilter = "todos" | "pendiente" | "completado" | "sin-recomendacion" | "advertencia";
+type ReviewSort = "fecha" | "fase" | "confianza";
+type CompletionRecord = {
+  completed: boolean;
+  signature: string;
 };
 
 export function MatchBrowser({
   matches: initialMatches,
   phases,
+  reviewItems,
 }: MatchBrowserProps) {
   const [matches, setMatches] = useState(initialMatches);
   const [phase, setPhase] = useState<MatchPhase | "Todas">("Todas");
@@ -54,6 +66,17 @@ export function MatchBrowser({
   const [finalRecommendation, setFinalRecommendation] =
     useState<ScoreRecommendationResult | null>(null);
   const [finalRecommendationError, setFinalRecommendationError] = useState("");
+  const [statusFilter, setStatusFilter] = useState<ReviewStatusFilter>("todos");
+  const [sortBy, setSortBy] = useState<ReviewSort>("fecha");
+  const [completionRecords, setCompletionRecords] = useState<Record<string, CompletionRecord>>(
+    () => readCompletionRecords(),
+  );
+  const [copiedMatchId, setCopiedMatchId] = useState("");
+
+  const reviewByMatchId = useMemo(
+    () => new Map(reviewItems.map((item) => [item.matchId, item])),
+    [reviewItems],
+  );
 
   const dates = useMemo(
     () => Array.from(new Set(matches.map((match) => match.startsAt.slice(0, 10)))).sort(),
@@ -72,8 +95,36 @@ export function MatchBrowser({
   }, [matches]);
 
   const filteredMatches = useMemo(
-    () => filterMatches(matches, { phase, date, team }),
-    [date, matches, phase, team],
+    () => {
+      const baseMatches = filterMatches(matches, { phase, date, team }).filter((match) => {
+        const review = reviewByMatchId.get(match.id);
+        const completion = completionRecords[match.id];
+        const isCompleted = Boolean(completion?.completed);
+        const hasRecommendation = Boolean(review?.recommendation.available);
+        const hasWarning = Boolean(review?.hasWarning);
+
+        if (statusFilter === "completado") {
+          return isCompleted;
+        }
+
+        if (statusFilter === "pendiente") {
+          return !isCompleted;
+        }
+
+        if (statusFilter === "sin-recomendacion") {
+          return !hasRecommendation;
+        }
+
+        if (statusFilter === "advertencia") {
+          return hasWarning;
+        }
+
+        return true;
+      });
+
+      return sortMatches(baseMatches, sortBy, reviewByMatchId);
+    },
+    [completionRecords, date, matches, phase, reviewByMatchId, sortBy, statusFilter, team],
   );
 
   const selectedMatch =
@@ -161,18 +212,63 @@ export function MatchBrowser({
   }, [oddsRefreshKey, selectedMatch?.id]);
 
   const statusCounts = useMemo(
-    () => ({
-      total: matches.length,
-      upcoming: matches.filter((match) => match.status === "proximo").length,
-      placeholders: matches.filter((match) => match.placeholder).length,
-    }),
-    [matches],
+    () => {
+      const completed = matches.filter((match) => completionRecords[match.id]?.completed).length;
+      const withRecommendation = matches.filter(
+        (match) => reviewByMatchId.get(match.id)?.recommendation.available,
+      ).length;
+
+      return {
+        total: matches.length,
+        completed,
+        pending: matches.length - completed,
+        withRecommendation,
+      };
+    },
+    [completionRecords, matches, reviewByMatchId],
   );
+
+  useEffect(() => {
+    window.localStorage.setItem("prode:completed-matches", JSON.stringify(completionRecords));
+  }, [completionRecords]);
 
   function clearFilters() {
     setPhase("Todas");
     setDate("");
     setTeam("");
+    setStatusFilter("todos");
+  }
+
+  function toggleCompleted(matchId: string) {
+    const review = reviewByMatchId.get(matchId);
+
+    setCompletionRecords((current) => {
+      const isCompleted = Boolean(current[matchId]?.completed);
+      const next = { ...current };
+
+      if (isCompleted) {
+        delete next[matchId];
+      } else {
+        next[matchId] = {
+          completed: true,
+          signature: review?.signature ?? "sin-recomendacion",
+        };
+      }
+
+      return next;
+    });
+  }
+
+  async function copyRecommendedScore(matchId: string) {
+    const review = reviewByMatchId.get(matchId);
+
+    if (!review?.recommendation.available) {
+      return;
+    }
+
+    await navigator.clipboard.writeText(review.recommendation.recommended.score);
+    setCopiedMatchId(matchId);
+    window.setTimeout(() => setCopiedMatchId(""), 1600);
   }
 
   async function refreshMatches() {
@@ -243,8 +339,8 @@ export function MatchBrowser({
 
         <div className="grid grid-cols-3 gap-3 text-sm">
           <Metric label="Partidos" value={statusCounts.total} />
-          <Metric label="Proximos" value={statusCounts.upcoming} />
-          <Metric label="Por definir" value={statusCounts.placeholders} />
+          <Metric label="Completados" value={statusCounts.completed} />
+          <Metric label="Con recomend." value={statusCounts.withRecommendation} />
         </div>
       </header>
 
@@ -256,7 +352,7 @@ export function MatchBrowser({
               Filtros
             </div>
 
-            <div className="grid gap-3 md:grid-cols-[1fr_1fr_1.3fr_auto]">
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[1fr_1fr_1.3fr_1fr_1fr_auto]">
               <label className="flex flex-col gap-1 text-sm">
                 <span className="text-[var(--muted)]">Fase</span>
                 <select
@@ -309,6 +405,36 @@ export function MatchBrowser({
                     ))}
                   </datalist>
                 </div>
+              </label>
+
+              <label className="flex flex-col gap-1 text-sm">
+                <span className="text-[var(--muted)]">Estado prode</span>
+                <select
+                  className="h-10 rounded-md border border-[var(--line)] bg-white px-3 outline-none focus:border-[var(--accent)]"
+                  onChange={(event) =>
+                    setStatusFilter(event.target.value as ReviewStatusFilter)
+                  }
+                  value={statusFilter}
+                >
+                  <option value="todos">Todos</option>
+                  <option value="pendiente">Pendientes</option>
+                  <option value="completado">Completados</option>
+                  <option value="sin-recomendacion">Sin recomendación</option>
+                  <option value="advertencia">Con advertencia</option>
+                </select>
+              </label>
+
+              <label className="flex flex-col gap-1 text-sm">
+                <span className="text-[var(--muted)]">Orden</span>
+                <select
+                  className="h-10 rounded-md border border-[var(--line)] bg-white px-3 outline-none focus:border-[var(--accent)]"
+                  onChange={(event) => setSortBy(event.target.value as ReviewSort)}
+                  value={sortBy}
+                >
+                  <option value="fecha">Fecha</option>
+                  <option value="fase">Fase</option>
+                  <option value="confianza">Confianza</option>
+                </select>
               </label>
 
               <div className="flex items-end gap-2">
@@ -364,53 +490,110 @@ export function MatchBrowser({
               </div>
             ) : (
               <div className="divide-y divide-[var(--line)]">
-                {filteredMatches.map((match) => (
-                  <button
-                    className={`grid w-full gap-3 px-4 py-4 text-left hover:bg-slate-50 md:grid-cols-[minmax(0,1fr)_auto] ${
-                      selectedMatch?.id === match.id ? "bg-emerald-50/70" : "bg-white"
-                    }`}
-                    key={match.id}
-                    onClick={() => setSelectedMatchId(match.id)}
-                    type="button"
-                  >
-                    <div className="min-w-0">
-                      <div className="mb-2 flex flex-wrap items-center gap-2">
-                        <StatusBadge status={match.status} />
-                        <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700">
-                          {match.phase}
-                        </span>
-                        {match.group ? (
-                          <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700">
-                            {match.group}
-                          </span>
-                        ) : null}
-                        {match.placeholder ? (
-                          <span className="rounded-md bg-[var(--warning-bg)] px-2 py-1 text-xs font-medium text-[var(--warning)]">
-                            Equipos por definir
-                          </span>
-                        ) : null}
-                      </div>
-                      <div className="text-lg font-semibold">
-                        {match.homeTeam} vs {match.awayTeam}
-                      </div>
-                      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2 text-sm text-[var(--muted)]">
-                        <span className="inline-flex items-center gap-1.5">
-                          <Clock3 size={15} aria-hidden="true" />
-                          {formatMatchDate(match.startsAt)}
-                        </span>
-                        <span className="inline-flex items-center gap-1.5">
-                          <MapPin size={15} aria-hidden="true" />
-                          {match.venue}
-                        </span>
-                      </div>
-                    </div>
+                {filteredMatches.map((match) => {
+                  const review = reviewByMatchId.get(match.id);
+                  const completion = completionRecords[match.id];
+                  const isCompleted = Boolean(completion?.completed);
+                  const recommendationUpdated =
+                    isCompleted && completion?.signature !== review?.signature;
 
-                    <div className="flex items-center gap-2 text-sm font-medium text-[var(--accent)]">
-                      Seleccionar
-                      <ChevronRight size={16} aria-hidden="true" />
-                    </div>
-                  </button>
-                ))}
+                  return (
+                    <article
+                      className={`grid gap-3 px-4 py-4 md:grid-cols-[minmax(0,1fr)_260px] ${
+                        selectedMatch?.id === match.id ? "bg-emerald-50/70" : "bg-white"
+                      }`}
+                      key={match.id}
+                    >
+                      <div className="min-w-0">
+                        <div className="mb-2 flex flex-wrap items-center gap-2">
+                          <StatusBadge status={match.status} />
+                          <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700">
+                            {match.phase}
+                          </span>
+                          {match.group ? (
+                            <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700">
+                              {match.group}
+                            </span>
+                          ) : null}
+                          {match.placeholder ? (
+                            <span className="rounded-md bg-[var(--warning-bg)] px-2 py-1 text-xs font-medium text-[var(--warning)]">
+                              Equipos por definir
+                            </span>
+                          ) : null}
+                          {isCompleted ? (
+                            <span className="rounded-md bg-emerald-100 px-2 py-1 text-xs font-medium text-emerald-800">
+                              Completado
+                            </span>
+                          ) : null}
+                          {recommendationUpdated ? (
+                            <span className="rounded-md bg-amber-100 px-2 py-1 text-xs font-medium text-amber-800">
+                              Recomendación actualizada
+                            </span>
+                          ) : null}
+                        </div>
+                        <button
+                          className="text-left text-lg font-semibold hover:text-[var(--accent)]"
+                          onClick={() => setSelectedMatchId(match.id)}
+                          type="button"
+                        >
+                          {match.homeTeam} vs {match.awayTeam}
+                        </button>
+                        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2 text-sm text-[var(--muted)]">
+                          <span className="inline-flex items-center gap-1.5">
+                            <Clock3 size={15} aria-hidden="true" />
+                            {formatMatchDate(match.startsAt)}
+                          </span>
+                          <span className="inline-flex items-center gap-1.5">
+                            <MapPin size={15} aria-hidden="true" />
+                            {match.venue}
+                          </span>
+                        </div>
+                        <MatchReviewSummary review={review} />
+                      </div>
+
+                      <div className="flex flex-col justify-between gap-3">
+                        <div className="flex justify-end">
+                          <button
+                            className="inline-flex items-center gap-2 rounded-md border border-[var(--line)] px-3 py-2 text-sm font-medium hover:bg-slate-50"
+                            onClick={() => setSelectedMatchId(match.id)}
+                            type="button"
+                          >
+                            Detalle
+                            <ChevronRight size={16} aria-hidden="true" />
+                          </button>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            className="inline-flex items-center justify-center gap-2 rounded-md border border-[var(--line)] px-3 py-2 text-sm font-medium hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                            disabled={!review?.recommendation.available}
+                            onClick={() => copyRecommendedScore(match.id)}
+                            type="button"
+                          >
+                            {copiedMatchId === match.id ? (
+                              <ClipboardCheck size={15} aria-hidden="true" />
+                            ) : (
+                              <Clipboard size={15} aria-hidden="true" />
+                            )}
+                            {copiedMatchId === match.id ? "Copiado" : "Copiar"}
+                          </button>
+                          <button
+                            className={`inline-flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium ${
+                              isCompleted
+                                ? "border border-emerald-200 bg-emerald-50 text-emerald-800"
+                                : "bg-[var(--accent)] text-white hover:bg-[var(--accent-strong)]"
+                            }`}
+                            onClick={() => toggleCompleted(match.id)}
+                            type="button"
+                          >
+                            <Check size={15} aria-hidden="true" />
+                            {isCompleted ? "Hecho" : "Completar"}
+                          </button>
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
               </div>
             )}
           </section>
@@ -1000,6 +1183,39 @@ function Metric({ label, value }: { label: string; value: number }) {
   );
 }
 
+function MatchReviewSummary({ review }: { review: MatchReviewItem | undefined }) {
+  if (!review || !review.recommendation.available) {
+    return (
+      <div className="mt-3 rounded-md border border-[var(--line)] bg-slate-50 p-3 text-sm text-[var(--muted)]">
+        Sin recomendación final disponible.
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-3 grid gap-2 rounded-md border border-[var(--line)] bg-slate-50 p-3 text-sm md:grid-cols-[1fr_auto]">
+      <div>
+        <div className="text-xs text-[var(--muted)]">Recomendación final</div>
+        <div className="mt-1 font-semibold">
+          {review.recommendation.recommended.score} ·{" "}
+          {review.recommendation.recommended.signLabel}
+        </div>
+      </div>
+      <div className="md:text-right">
+        <div className="text-xs text-[var(--muted)]">Puntos esperados</div>
+        <div className="mt-1 font-semibold">
+          {review.recommendation.recommended.expectedPoints.toFixed(2)}
+        </div>
+      </div>
+      {review.hasWarning ? (
+        <div className="rounded-md bg-[var(--warning-bg)] px-2 py-1 text-xs text-[var(--warning)] md:col-span-2">
+          Tiene advertencias para revisar en detalle.
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function StatusBadge({ status }: { status: Match["status"] }) {
   const styles = {
     proximo: "bg-blue-50 text-blue-700",
@@ -1021,4 +1237,50 @@ function DetailRow({ label, value }: { label: string; value: string }) {
       <span className="font-medium text-[var(--foreground)]">{value}</span>
     </div>
   );
+}
+
+function sortMatches(
+  matches: Match[],
+  sortBy: ReviewSort,
+  reviewByMatchId: Map<string, MatchReviewItem>,
+) {
+  return [...matches].sort((a, b) => {
+    if (sortBy === "fase") {
+      return a.phase.localeCompare(b.phase) || a.startsAt.localeCompare(b.startsAt);
+    }
+
+    if (sortBy === "confianza") {
+      const aPoints = getExpectedPoints(reviewByMatchId.get(a.id));
+      const bPoints = getExpectedPoints(reviewByMatchId.get(b.id));
+      return bPoints - aPoints || a.startsAt.localeCompare(b.startsAt);
+    }
+
+    return a.startsAt.localeCompare(b.startsAt);
+  });
+}
+
+function getExpectedPoints(review: MatchReviewItem | undefined) {
+  if (!review?.recommendation.available) {
+    return -1;
+  }
+
+  return review.recommendation.recommended.expectedPoints;
+}
+
+function readCompletionRecords(): Record<string, CompletionRecord> {
+  if (typeof window === "undefined") {
+    return {};
+  }
+
+  const stored = window.localStorage.getItem("prode:completed-matches");
+
+  if (!stored) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(stored) as Record<string, CompletionRecord>;
+  } catch {
+    return {};
+  }
 }
