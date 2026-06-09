@@ -26,3 +26,29 @@ export type UnavailableWinnerPrediction = {
 };
 
 export type WinnerPredictionResult = WinnerPrediction | UnavailableWinnerPrediction;
+
+export type CorrectScorePrediction = {
+  available: true;
+  recommended: ConsensusOutcome;
+  alternatives: ConsensusOutcome[];
+  confidence: "alta" | "baja";
+  marginToSecond: number;
+  scope: MarketScope;
+  bookmakerCount: number;
+  expectedBookmakerCount: number;
+  lastUpdatedAt: string | null;
+  incomplete: boolean;
+  stale: boolean;
+  warnings: string[];
+  explanation: string;
+};
+
+export type UnavailableCorrectScorePrediction = {
+  available: false;
+  reason: string;
+  warnings: string[];
+};
+
+export type CorrectScorePredictionResult =
+  | CorrectScorePrediction
+  | UnavailableCorrectScorePrediction;

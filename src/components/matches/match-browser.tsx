@@ -20,7 +20,10 @@ import {
 } from "@/domain/matches/matches";
 import type { Match, MatchPhase } from "@/domain/matches/types";
 import type { ConsensusMarket, MatchOddsSummary } from "@/domain/odds/types";
-import type { WinnerPredictionResult } from "@/domain/predictions/types";
+import type {
+  CorrectScorePredictionResult,
+  WinnerPredictionResult,
+} from "@/domain/predictions/types";
 
 type MatchBrowserProps = {
   matches: Match[];
@@ -44,6 +47,9 @@ export function MatchBrowser({
   const [oddsRefreshKey, setOddsRefreshKey] = useState(0);
   const [winnerPrediction, setWinnerPrediction] = useState<WinnerPredictionResult | null>(null);
   const [winnerError, setWinnerError] = useState("");
+  const [correctScorePrediction, setCorrectScorePrediction] =
+    useState<CorrectScorePredictionResult | null>(null);
+  const [correctScoreError, setCorrectScoreError] = useState("");
 
   const dates = useMemo(
     () => Array.from(new Set(matches.map((match) => match.startsAt.slice(0, 10)))).sort(),
@@ -80,11 +86,13 @@ export function MatchBrowser({
       setIsLoadingOdds(true);
       setOddsError("");
       setWinnerError("");
+      setCorrectScoreError("");
 
       try {
-        const [oddsResponse, winnerResponse] = await Promise.all([
+        const [oddsResponse, winnerResponse, correctScoreResponse] = await Promise.all([
           fetch(`/api/odds?matchId=${matchId}`),
           fetch(`/api/predictions/winner?matchId=${matchId}`),
+          fetch(`/api/predictions/correct-score?matchId=${matchId}`),
         ]);
 
         if (!oddsResponse.ok) {
@@ -95,21 +103,31 @@ export function MatchBrowser({
           throw new Error("No se pudo cargar la recomendacion");
         }
 
+        if (!correctScoreResponse.ok) {
+          throw new Error("No se pudo cargar el resultado exacto");
+        }
+
         const oddsPayload = (await oddsResponse.json()) as MatchOddsSummary;
         const winnerPayload = (await winnerResponse.json()) as {
           prediction: WinnerPredictionResult;
+        };
+        const correctScorePayload = (await correctScoreResponse.json()) as {
+          prediction: CorrectScorePredictionResult;
         };
 
         if (!cancelled) {
           setOdds(oddsPayload);
           setWinnerPrediction(winnerPayload.prediction);
+          setCorrectScorePrediction(correctScorePayload.prediction);
         }
       } catch {
         if (!cancelled) {
           setOdds(null);
           setWinnerPrediction(null);
+          setCorrectScorePrediction(null);
           setOddsError("No se pudieron cargar las probabilidades.");
           setWinnerError("No se pudo cargar la recomendacion de ganador/empate.");
+          setCorrectScoreError("No se pudo cargar la recomendacion de resultado exacto.");
         }
       } finally {
         if (!cancelled) {
@@ -418,6 +436,8 @@ export function MatchBrowser({
                 onRetry={() => setOddsRefreshKey((value) => value + 1)}
                 winnerError={winnerError}
                 winnerPrediction={winnerPrediction}
+                correctScoreError={correctScoreError}
+                correctScorePrediction={correctScorePrediction}
               />
             </div>
           ) : (
@@ -438,6 +458,8 @@ function OddsPanel({
   onRetry,
   winnerError,
   winnerPrediction,
+  correctScoreError,
+  correctScorePrediction,
 }: {
   isLoading: boolean;
   odds: MatchOddsSummary | null;
@@ -445,6 +467,8 @@ function OddsPanel({
   onRetry: () => void;
   winnerError: string;
   winnerPrediction: WinnerPredictionResult | null;
+  correctScoreError: string;
+  correctScorePrediction: CorrectScorePredictionResult | null;
 }) {
   const matchWinner = odds?.markets.find((market) => market.key === "match_winner");
   const correctScore = odds?.markets.find((market) => market.key === "correct_score");
@@ -484,6 +508,10 @@ function OddsPanel({
       {!isLoading && !oddsError && odds ? (
         <div className="space-y-4">
           <WinnerPredictionCard error={winnerError} prediction={winnerPrediction} />
+          <CorrectScorePredictionCard
+            error={correctScoreError}
+            prediction={correctScorePrediction}
+          />
 
           <div className="rounded-md border border-[var(--line)] p-3 text-xs leading-5 text-[var(--muted)]">
             Fuente: {odds.source}. Generado: {formatMatchDate(odds.generatedAt)}.
@@ -516,6 +544,109 @@ function OddsPanel({
         </div>
       ) : null}
     </section>
+  );
+}
+
+function CorrectScorePredictionCard({
+  error,
+  prediction,
+}: {
+  error: string;
+  prediction: CorrectScorePredictionResult | null;
+}) {
+  if (error) {
+    return (
+      <div className="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+        {error}
+      </div>
+    );
+  }
+
+  if (!prediction) {
+    return null;
+  }
+
+  if (!prediction.available) {
+    return (
+      <div className="rounded-lg border border-[var(--line)] bg-slate-50 p-4">
+        <h4 className="text-sm font-semibold">Predicción resultado exacto</h4>
+        <p className="mt-2 text-sm text-[var(--muted)]">{prediction.reason}</p>
+        {prediction.warnings.map((warning) => (
+          <p className="mt-2 text-xs text-[var(--warning)]" key={warning}>
+            {warning}
+          </p>
+        ))}
+      </div>
+    );
+  }
+
+  const scopeLabel =
+    prediction.scope === "includes_extra_time" ? "Incluye prorroga" : "Solo 90 minutos";
+
+  return (
+    <div className="rounded-lg border border-sky-200 bg-sky-50 p-4">
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div>
+          <h4 className="text-sm font-semibold text-sky-950">
+            Predicción resultado exacto
+          </h4>
+          <p className="mt-1 text-xs text-sky-800">{scopeLabel}</p>
+        </div>
+        <span className="rounded-md bg-white px-2 py-1 text-xs font-semibold text-sky-800">
+          Confianza {prediction.confidence}
+        </span>
+      </div>
+
+      <div className="rounded-md bg-white p-3">
+        <div className="text-xs font-medium text-[var(--muted)]">Marcador recomendado</div>
+        <div className="mt-1 flex items-end justify-between gap-3">
+          <div className="text-3xl font-semibold">{prediction.recommended.label}</div>
+          <div className="text-lg font-semibold">
+            {formatProbability(prediction.recommended.probability)}
+          </div>
+        </div>
+      </div>
+
+      <p className="mt-3 text-sm leading-6 text-sky-950">{prediction.explanation}</p>
+
+      <div className="mt-3 space-y-2">
+        {prediction.alternatives.map((outcome) => (
+          <div key={outcome.key}>
+            <div className="mb-1 flex items-center justify-between gap-3 text-xs text-sky-950">
+              <span>{outcome.label}</span>
+              <span>{formatProbability(outcome.probability)}</span>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-white">
+              <div
+                className={`h-full rounded-full ${
+                  outcome.key === prediction.recommended.key ? "bg-sky-700" : "bg-sky-200"
+                }`}
+                style={{ width: `${Math.max(outcome.probability * 100, 3)}%` }}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {prediction.warnings.length ? (
+        <div className="mt-3 space-y-2">
+          {prediction.warnings.map((warning) => (
+            <div
+              className="rounded-md border border-amber-200 bg-[var(--warning-bg)] p-2 text-xs leading-5 text-[var(--warning)]"
+              key={warning}
+            >
+              {warning}
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      <div className="mt-3 text-xs leading-5 text-sky-900">
+        Consenso usado: {prediction.bookmakerCount}/{prediction.expectedBookmakerCount} casas.
+        Ultima actualización:{" "}
+        {prediction.lastUpdatedAt ? formatMatchDate(prediction.lastUpdatedAt) : "sin dato"}.
+      </div>
+    </div>
   );
 }
 
