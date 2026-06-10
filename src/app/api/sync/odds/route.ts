@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { getPersistedMatches, seedMatchesIfEmpty } from "@/domain/matches/repository";
-import { syncTheOddsApi } from "@/domain/odds/providers/the-odds-api";
+import { syncOddsApiIo } from "@/domain/odds/providers/odds-api-io";
 
 export async function POST() {
   await seedMatchesIfEmpty();
   const matches = await getPersistedMatches();
-  const result = await syncTheOddsApi(matches);
+  const result = await syncOddsApiIo(matches);
 
   return NextResponse.json({
     ...result,
