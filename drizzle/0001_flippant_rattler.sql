@@ -1,0 +1,1 @@
+ALTER TABLE "completion_records" ADD COLUMN "user_score" text;

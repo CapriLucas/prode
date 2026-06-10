@@ -16,6 +16,7 @@ export async function PUT(request: NextRequest) {
     matchId?: string;
     completed?: boolean;
     signature?: string;
+    userScore?: string | null;
   };
 
   if (!payload.matchId) {
@@ -26,6 +27,7 @@ export async function PUT(request: NextRequest) {
     matchId: payload.matchId,
     completed: Boolean(payload.completed),
     signature: payload.signature ?? "sin-recomendacion",
+    userScore: payload.userScore ?? null,
   });
 
   return NextResponse.json(result);

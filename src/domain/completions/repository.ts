@@ -5,6 +5,7 @@ import { completionRecords } from "@/db/schema";
 export type PersistedCompletionRecord = {
   completed: boolean;
   signature: string;
+  userScore: string | null;
 };
 
 export async function getCompletionRecords(): Promise<
@@ -27,6 +28,7 @@ export async function getCompletionRecords(): Promise<
       {
         completed: row.completed,
         signature: row.signature,
+        userScore: row.userScore ?? null,
       },
     ]),
   );
@@ -36,10 +38,12 @@ export async function saveCompletionRecord({
   matchId,
   completed,
   signature,
+  userScore,
 }: {
   matchId: string;
   completed: boolean;
   signature: string;
+  userScore?: string | null;
 }) {
   if (!db) {
     return { persisted: false };
@@ -61,6 +65,7 @@ export async function saveCompletionRecord({
         matchId,
         completed,
         signature,
+        userScore: userScore ?? null,
         updatedAt: new Date(),
       })
       .onConflictDoUpdate({
@@ -68,6 +73,7 @@ export async function saveCompletionRecord({
         set: {
           completed,
           signature,
+          userScore: userScore ?? null,
           updatedAt: new Date(),
         },
       }),

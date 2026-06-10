@@ -13,8 +13,9 @@ import {
   RefreshCw,
   Search,
   Trophy,
+  X,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   filterMatches,
   formatDateLabel,
@@ -41,6 +42,7 @@ type ReviewSort = "fecha" | "fase" | "confianza";
 type CompletionRecord = {
   completed: boolean;
   signature: string;
+  userScore?: string | null;
 };
 
 export function MatchBrowser({
@@ -74,6 +76,14 @@ export function MatchBrowser({
     () => ({ ...initialCompletionRecords, ...readCompletionRecords() }),
   );
   const [copiedMatchId, setCopiedMatchId] = useState("");
+  const [isSyncingMatches, setIsSyncingMatches] = useState(false);
+  const [isSyncingOdds, setIsSyncingOdds] = useState(false);
+  const [syncMatchesMessage, setSyncMatchesMessage] = useState("");
+  const [syncOddsMessage, setSyncOddsMessage] = useState("");
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [userScoreInput, setUserScoreInput] = useState("");
+  const [userScoreError, setUserScoreError] = useState("");
+  const modalRef = useRef<HTMLDivElement>(null);
 
   const reviewByMatchId = useMemo(
     () => new Map(reviewItems.map((item) => [item.matchId, item])),
@@ -133,7 +143,7 @@ export function MatchBrowser({
     matches.find((match) => match.id === selectedMatchId) ?? filteredMatches[0] ?? null;
 
   useEffect(() => {
-    if (!selectedMatch?.id) {
+    if (!isModalOpen || !selectedMatch?.id) {
       return;
     }
 
@@ -211,7 +221,21 @@ export function MatchBrowser({
     return () => {
       cancelled = true;
     };
-  }, [oddsRefreshKey, selectedMatch?.id]);
+  }, [isModalOpen, oddsRefreshKey, selectedMatch?.id]);
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setIsModalOpen(false);
+      }
+    }
+
+    if (isModalOpen) {
+      document.addEventListener("keydown", onKeyDown);
+    }
+
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [isModalOpen]);
 
   const statusCounts = useMemo(
     () => {
@@ -243,10 +267,12 @@ export function MatchBrowser({
 
   function toggleCompleted(matchId: string) {
     const review = reviewByMatchId.get(matchId);
-    const isCurrentlyCompleted = Boolean(completionRecords[matchId]?.completed);
-    const nextRecord = {
+    const existing = completionRecords[matchId];
+    const isCurrentlyCompleted = Boolean(existing?.completed);
+    const nextRecord: CompletionRecord = {
       completed: !isCurrentlyCompleted,
       signature: review?.signature ?? "sin-recomendacion",
+      userScore: existing?.userScore ?? null,
     };
 
     setCompletionRecords((current) => {
@@ -262,6 +288,27 @@ export function MatchBrowser({
     });
 
     persistCompletion(matchId, nextRecord);
+  }
+
+  function saveMyPrediction(matchId: string) {
+    const trimmed = userScoreInput.trim();
+
+    if (trimmed && !/^\d+-\d+$/.test(trimmed)) {
+      setUserScoreError("Formato inválido. Usá el formato goles-goles, ej. 2-1.");
+      return;
+    }
+
+    const review = reviewByMatchId.get(matchId);
+    const nextRecord: CompletionRecord = {
+      completed: true,
+      signature: review?.signature ?? "sin-recomendacion",
+      userScore: trimmed || null,
+    };
+
+    setCompletionRecords((current) => ({ ...current, [matchId]: nextRecord }));
+    persistCompletion(matchId, nextRecord);
+    setUserScoreError("");
+    setIsModalOpen(false);
   }
 
   async function copyRecommendedScore(matchId: string) {
@@ -296,6 +343,38 @@ export function MatchBrowser({
     }
   }
 
+  async function syncMatches() {
+    setIsSyncingMatches(true);
+    setSyncMatchesMessage("");
+    try {
+      const response = await fetch("/api/sync/matches", { method: "POST" });
+      const data = (await response.json()) as { message?: string };
+      setSyncMatchesMessage(data.message ?? "Partidos sincronizados.");
+      await refreshMatches();
+      window.setTimeout(() => setSyncMatchesMessage(""), 6000);
+    } catch {
+      setSyncMatchesMessage("Error al sincronizar partidos.");
+    } finally {
+      setIsSyncingMatches(false);
+    }
+  }
+
+  async function syncOdds() {
+    setIsSyncingOdds(true);
+    setSyncOddsMessage("");
+    try {
+      const response = await fetch("/api/sync/odds", { method: "POST" });
+      const data = (await response.json()) as { message?: string };
+      setSyncOddsMessage(data.message ?? "Odds sincronizados.");
+      setOddsRefreshKey((k) => k + 1);
+      window.setTimeout(() => setSyncOddsMessage(""), 6000);
+    } catch {
+      setSyncOddsMessage("Error al sincronizar odds.");
+    } finally {
+      setIsSyncingOdds(false);
+    }
+  }
+
   if (sourceError) {
     return (
       <section className="mx-auto flex min-h-screen w-full max-w-5xl items-center px-5 py-10">
@@ -326,6 +405,7 @@ export function MatchBrowser({
   }
 
   return (
+    <>
     <section className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-5 py-6 lg:px-8">
       <header className="flex flex-col gap-5 border-b border-[var(--line)] pb-6 lg:flex-row lg:items-end lg:justify-between">
         <div>
@@ -342,14 +422,58 @@ export function MatchBrowser({
           </p>
         </div>
 
-        <div className="grid grid-cols-3 gap-3 text-sm">
-          <Metric label="Partidos" value={statusCounts.total} />
-          <Metric label="Completados" value={statusCounts.completed} />
-          <Metric label="Con recomend." value={statusCounts.withRecommendation} />
+        <div className="flex flex-col items-start gap-3 lg:items-end">
+          <div className="grid grid-cols-3 gap-3 text-sm">
+            <Metric label="Partidos" value={statusCounts.total} />
+            <Metric label="Completados" value={statusCounts.completed} />
+            <Metric label="Con recomend." value={statusCounts.withRecommendation} />
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <div className="flex flex-col items-end gap-1">
+              <button
+                className="inline-flex items-center gap-2 rounded-md border border-[var(--line)] px-3 py-2 text-sm font-medium hover:bg-slate-50 disabled:opacity-60"
+                disabled={isSyncingMatches || isSyncingOdds}
+                onClick={syncMatches}
+                type="button"
+              >
+                <RefreshCw
+                  className={isSyncingMatches ? "animate-spin" : ""}
+                  size={15}
+                  aria-hidden="true"
+                />
+                {isSyncingMatches ? "Sincronizando..." : "Sync partidos"}
+              </button>
+              {syncMatchesMessage && (
+                <span className="max-w-[200px] text-right text-xs text-[var(--muted)]">
+                  {syncMatchesMessage}
+                </span>
+              )}
+            </div>
+            <div className="flex flex-col items-end gap-1">
+              <button
+                className="inline-flex items-center gap-2 rounded-md border border-[var(--line)] px-3 py-2 text-sm font-medium hover:bg-slate-50 disabled:opacity-60"
+                disabled={isSyncingMatches || isSyncingOdds}
+                onClick={syncOdds}
+                type="button"
+              >
+                <RefreshCw
+                  className={isSyncingOdds ? "animate-spin" : ""}
+                  size={15}
+                  aria-hidden="true"
+                />
+                {isSyncingOdds ? "Sincronizando..." : "Sync odds"}
+              </button>
+              {syncOddsMessage && (
+                <span className="max-w-[200px] text-right text-xs text-[var(--muted)]">
+                  {syncOddsMessage}
+                </span>
+              )}
+            </div>
+          </div>
         </div>
       </header>
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="flex flex-col gap-4">
         <div className="flex min-w-0 flex-col gap-4">
           <section className="rounded-lg border border-[var(--line)] bg-[var(--panel)] p-4 shadow-sm">
             <div className="mb-4 flex items-center gap-2 text-sm font-medium">
@@ -527,7 +651,7 @@ export function MatchBrowser({
                           ) : null}
                           {isCompleted ? (
                             <span className="rounded-md bg-emerald-100 px-2 py-1 text-xs font-medium text-emerald-800">
-                              Completado
+                              {completion?.userScore ? `Mi predicción: ${completion.userScore}` : "Completado"}
                             </span>
                           ) : null}
                           {recommendationUpdated ? (
@@ -560,7 +684,19 @@ export function MatchBrowser({
                         <div className="flex justify-end">
                           <button
                             className="inline-flex items-center gap-2 rounded-md border border-[var(--line)] px-3 py-2 text-sm font-medium hover:bg-slate-50"
-                            onClick={() => setSelectedMatchId(match.id)}
+                            onClick={() => {
+                              const existing = completionRecords[match.id];
+                              const review = reviewByMatchId.get(match.id);
+                              const prefill =
+                                existing?.userScore ??
+                                (review?.recommendation.available
+                                  ? review.recommendation.recommended.score
+                                  : "");
+                              setSelectedMatchId(match.id);
+                              setUserScoreInput(prefill);
+                              setUserScoreError("");
+                              setIsModalOpen(true);
+                            }}
                             type="button"
                           >
                             Detalle
@@ -604,52 +740,113 @@ export function MatchBrowser({
           </section>
         </div>
 
-        <aside className="h-fit rounded-lg border border-[var(--line)] bg-[var(--panel)] p-5 shadow-sm lg:sticky lg:top-6">
-          <div className="mb-4 flex items-center gap-2 text-sm font-medium text-[var(--muted)]">
-            <Check size={16} aria-hidden="true" />
-            Partido seleccionado
-          </div>
-
-          {selectedMatch ? (
-            <div>
-              <h2 className="text-2xl font-semibold">
-                {selectedMatch.homeTeam} vs {selectedMatch.awayTeam}
-              </h2>
-              <div className="mt-4 space-y-3 text-sm text-[var(--muted)]">
-                <DetailRow label="Fecha" value={formatMatchDate(selectedMatch.startsAt)} />
-                <DetailRow label="Fase" value={selectedMatch.phase} />
-                <DetailRow label="Estado" value={selectedMatch.status} />
-                <DetailRow label="Sede" value={selectedMatch.venue} />
-              </div>
-
-              {selectedMatch.placeholder ? (
-                <div className="mt-5 rounded-md border border-amber-200 bg-[var(--warning-bg)] p-3 text-sm leading-6 text-[var(--warning)]">
-                  Este partido tiene participantes pendientes. Cuando se definan los cruces,
-                  el dataset podra actualizarse sin cambiar el flujo.
-                </div>
-              ) : null}
-
-              <OddsPanel
-                isLoading={isLoadingOdds}
-                odds={odds}
-                oddsError={oddsError}
-                onRetry={() => setOddsRefreshKey((value) => value + 1)}
-                winnerError={winnerError}
-                winnerPrediction={winnerPrediction}
-                correctScoreError={correctScoreError}
-                correctScorePrediction={correctScorePrediction}
-                finalRecommendation={finalRecommendation}
-                finalRecommendationError={finalRecommendationError}
-              />
-            </div>
-          ) : (
-            <p className="text-sm text-[var(--muted)]">
-              Selecciona un partido de la lista para continuar.
-            </p>
-          )}
-        </aside>
       </div>
     </section>
+
+    {isModalOpen && selectedMatch ? (
+      <div
+        className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 px-4 py-8"
+        onClick={(e) => {
+          if (modalRef.current && !modalRef.current.contains(e.target as Node)) {
+            setIsModalOpen(false);
+          }
+        }}
+      >
+        <div
+          className="relative w-full max-w-2xl rounded-xl border border-[var(--line)] bg-white shadow-xl"
+          ref={modalRef}
+        >
+          <div className="flex items-start justify-between border-b border-[var(--line)] p-5">
+            <div>
+              <h2 className="text-xl font-semibold">
+                {selectedMatch.homeTeam} vs {selectedMatch.awayTeam}
+              </h2>
+              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-[var(--muted)]">
+                <span className="inline-flex items-center gap-1.5">
+                  <Clock3 size={14} aria-hidden="true" />
+                  {formatMatchDate(selectedMatch.startsAt)}
+                </span>
+                <span>{selectedMatch.phase}</span>
+                <span className="inline-flex items-center gap-1.5">
+                  <MapPin size={14} aria-hidden="true" />
+                  {selectedMatch.venue}
+                </span>
+              </div>
+            </div>
+            <button
+              className="ml-4 flex-shrink-0 rounded-md p-1 hover:bg-slate-100"
+              onClick={() => setIsModalOpen(false)}
+              type="button"
+              aria-label="Cerrar"
+            >
+              <X size={20} />
+            </button>
+          </div>
+
+          <div className="border-b border-[var(--line)] p-5">
+            <h3 className="mb-3 text-sm font-semibold">Tu predicción</h3>
+            {completionRecords[selectedMatch.id]?.userScore ? (
+              <div className="mb-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+                Guardado: <span className="font-semibold">{completionRecords[selectedMatch.id].userScore}</span>
+              </div>
+            ) : null}
+            <div className="flex gap-2">
+              <input
+                className="h-10 w-28 rounded-md border border-[var(--line)] px-3 text-sm outline-none focus:border-[var(--accent)]"
+                placeholder="ej. 2-1"
+                type="text"
+                value={userScoreInput}
+                onChange={(e) => {
+                  setUserScoreInput(e.target.value);
+                  setUserScoreError("");
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") saveMyPrediction(selectedMatch.id);
+                }}
+              />
+              <button
+                className="inline-flex items-center gap-2 rounded-md bg-[var(--accent)] px-4 py-2 text-sm font-medium text-white hover:bg-[var(--accent-strong)]"
+                onClick={() => saveMyPrediction(selectedMatch.id)}
+                type="button"
+              >
+                <Check size={15} aria-hidden="true" />
+                Guardar predicción
+              </button>
+            </div>
+            {userScoreError ? (
+              <p className="mt-2 text-xs text-red-600">{userScoreError}</p>
+            ) : (
+              <p className="mt-2 text-xs text-[var(--muted)]">
+                Ingresá tu marcador o dejá vacío para marcar como completado sin puntaje.
+              </p>
+            )}
+          </div>
+
+          {selectedMatch.placeholder ? (
+            <div className="mx-5 mt-5 rounded-md border border-amber-200 bg-[var(--warning-bg)] p-3 text-sm leading-6 text-[var(--warning)]">
+              Este partido tiene participantes pendientes. Cuando se definan los cruces,
+              el dataset podra actualizarse sin cambiar el flujo.
+            </div>
+          ) : null}
+
+          <div className="p-5">
+            <OddsPanel
+              isLoading={isLoadingOdds}
+              odds={odds}
+              oddsError={oddsError}
+              onRetry={() => setOddsRefreshKey((value) => value + 1)}
+              winnerError={winnerError}
+              winnerPrediction={winnerPrediction}
+              correctScoreError={correctScoreError}
+              correctScorePrediction={correctScorePrediction}
+              finalRecommendation={finalRecommendation}
+              finalRecommendationError={finalRecommendationError}
+            />
+          </div>
+        </div>
+      </div>
+    ) : null}
+    </>
   );
 }
 
@@ -1300,6 +1497,7 @@ function persistCompletion(matchId: string, record: CompletionRecord) {
       matchId,
       completed: record.completed,
       signature: record.signature,
+      userScore: record.userScore ?? null,
     }),
   }).catch(() => {
     // The local optimistic state remains available through localStorage fallback.

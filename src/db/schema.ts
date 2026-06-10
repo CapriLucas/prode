@@ -28,6 +28,7 @@ export const completionRecords = pgTable("completion_records", {
     .references(() => matches.id, { onDelete: "cascade" }),
   completed: boolean("completed").notNull().default(false),
   signature: text("signature").notNull(),
+  userScore: text("user_score"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
 });
 
