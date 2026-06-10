@@ -2,7 +2,10 @@ import type { Match } from "@/domain/matches/types";
 import type { BookmakerOdds, OddsMarket } from "../types";
 import { saveOddsSummary } from "../repository";
 import { getOddsSummaryFromBookmakers } from "../odds";
-import { fetchOddsApiIoEvents, type OddsApiIoEvent } from "@/domain/matches/providers/odds-api-io";
+import {
+  fetchOddsApiIoEvents,
+  type OddsApiIoEvent,
+} from "@/domain/matches/providers/odds-api-io";
 
 type ApiMarket = {
   name: string;
@@ -14,32 +17,71 @@ type ApiEvent = OddsApiIoEvent & {
   bookmakers: Record<string, ApiMarket[]>;
 };
 
-const BASE_URL = process.env.ODDS_API_IO_BASE_URL ?? "https://api.odds-api.io/v3";
+const BASE_URL =
+  process.env.ODDS_API_IO_BASE_URL ?? "https://api.odds-api.io/v3";
 const BOOKMAKERS = ["Bet365"];
 const BATCH_SIZE = 10;
+const LOG_PREFIX = "[odds-sync]";
 
 export async function syncOddsApiIo(matches: Match[]) {
   const apiKey = process.env.ODDS_API_KEY_IO;
+  logInfo("inicio", {
+    matches: matches.length,
+    bookmakers: BOOKMAKERS.join(","),
+    batchSize: BATCH_SIZE,
+  });
 
   if (!apiKey) {
-    return { synced: 0, skipped: true, message: "ODDS_API_KEY_IO no configurada." };
+    logWarn("omitido: ODDS_API_KEY_IO no configurada");
+    return {
+      synced: 0,
+      skipped: true,
+      message: "ODDS_API_KEY_IO no configurada.",
+    };
   }
 
   const eventsResult = await fetchOddsApiIoEvents();
 
   if (eventsResult.skipped) {
+    logWarn("omitido: no se pudieron obtener eventos", {
+      message: eventsResult.message,
+    });
     return { synced: 0, skipped: true, message: eventsResult.message };
   }
 
   const upcomingEvents = eventsResult.events.filter(
     (event) => event.status === "pending" || event.status === "live",
   );
+  logInfo("eventos obtenidos", {
+    total: eventsResult.events.length,
+    upcoming: upcomingEvents.length,
+  });
 
   const oddsMap = new Map<number, ApiEvent>();
   const ids = getEventIdsForMatches(matches, upcomingEvents);
+  const totalBatches = Math.ceil(ids.length / BATCH_SIZE);
+  logInfo("event ids detectados para odds", {
+    ids: ids.length,
+    batches: totalBatches,
+  });
+
+  if (!ids.length) {
+    logWarn("sin event ids para consultar odds");
+    return {
+      synced: 0,
+      fetched: 0,
+      skipped: false,
+      message: "No se encontraron eventos de odds-api.io para los partidos persistidos.",
+    };
+  }
 
   for (let i = 0; i < ids.length; i += BATCH_SIZE) {
     const batch = ids.slice(i, i + BATCH_SIZE);
+    const batchNumber = Math.floor(i / BATCH_SIZE) + 1;
+    logInfo(`consultando batch ${batchNumber}/${totalBatches}`, {
+      eventIds: batch.join(","),
+    });
+
     const oddsUrl = new URL(`${BASE_URL}/odds/multi`);
     oddsUrl.searchParams.set("apiKey", apiKey);
     oddsUrl.searchParams.set("eventIds", batch.join(","));
@@ -47,26 +89,65 @@ export async function syncOddsApiIo(matches: Match[]) {
 
     const oddsRes = await fetch(oddsUrl, { cache: "no-store" });
     if (!oddsRes.ok) {
-      throw new Error(`odds-api.io /odds/multi error ${oddsRes.status}: ${await oddsRes.text()}`);
+      const body = await oddsRes.text();
+      logError(`fallo batch ${batchNumber}/${totalBatches}`, {
+        status: oddsRes.status,
+        body,
+      });
+      throw new Error(`odds-api.io /odds/multi error ${oddsRes.status}: ${body}`);
     }
 
     const batchData = (await oddsRes.json()) as ApiEvent[];
+    logInfo(`batch ${batchNumber}/${totalBatches} recibido`, {
+      eventsWithOdds: batchData.length,
+    });
+
     for (const ev of batchData) {
       oddsMap.set(ev.id, ev);
     }
   }
 
   let synced = 0;
+  let built = 0;
+  let skippedNoEvent = 0;
+  let skippedNoOdds = 0;
+  let skippedNoBookmakers = 0;
+  let skippedPersistence = 0;
 
-  for (const match of matches) {
+  logInfo("procesando partidos", {
+    matches: matches.length,
+    eventsWithOdds: oddsMap.size,
+  });
+
+  for (const [index, match] of matches.entries()) {
+    const progress = `${index + 1}/${matches.length}`;
     const event = findEventForMatch(upcomingEvents, match);
-    if (!event) continue;
+    if (!event) {
+      skippedNoEvent++;
+      logWarn(`skip ${progress}: sin evento asociado`, describeMatch(match));
+      continue;
+    }
 
     const eventWithOdds = oddsMap.get(event.id);
-    if (!eventWithOdds?.bookmakers) continue;
+    if (!eventWithOdds?.bookmakers) {
+      skippedNoOdds++;
+      logWarn(`skip ${progress}: sin odds en respuesta`, {
+        ...describeMatch(match),
+        eventId: event.id,
+      });
+      continue;
+    }
 
     const bookmakers = mapBookmakers(eventWithOdds);
-    if (!bookmakers.length) continue;
+    if (!bookmakers.length) {
+      skippedNoBookmakers++;
+      logWarn(`skip ${progress}: sin bookmakers/markets compatibles`, {
+        ...describeMatch(match),
+        eventId: event.id,
+        bookmakers: Object.keys(eventWithOdds.bookmakers).join(","),
+      });
+      continue;
+    }
 
     const summary = getOddsSummaryFromBookmakers({
       matchId: match.id,
@@ -74,13 +155,45 @@ export async function syncOddsApiIo(matches: Match[]) {
       expectedBookmakers: BOOKMAKERS,
       bookmakers,
     });
+    built++;
 
-    await saveOddsSummary(summary, String(event.id));
+    const persistence = await saveOddsSummary(summary, String(event.id));
+    if (!persistence.persisted) {
+      skippedPersistence++;
+      logWarn(`summary no persistido ${progress}`, {
+        ...describeMatch(match),
+        eventId: event.id,
+        error: persistence.error,
+      });
+      continue;
+    }
+
     synced++;
+    logInfo(`guardado ${progress}`, {
+      ...describeMatch(match),
+      eventId: event.id,
+      bookmakers: bookmakers.length,
+      markets: summary.markets.length,
+    });
   }
+
+  logInfo("fin", {
+    synced,
+    built,
+    skippedNoEvent,
+    skippedNoOdds,
+    skippedNoBookmakers,
+    skippedPersistence,
+  });
 
   return {
     synced,
+    built,
+    fetched: oddsMap.size,
+    skippedNoEvent,
+    skippedNoOdds,
+    skippedNoBookmakers,
+    skippedPersistence,
     skipped: false,
     message: `Sincronizados ${synced} partidos desde odds-api.io.`,
   };
@@ -215,4 +328,39 @@ function normalize(value: string): string {
     .replace(/\p{Diacritic}/gu, "")
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
+}
+
+function describeMatch(match: Match) {
+  return {
+    matchId: match.id,
+    teams: `${match.homeTeam} vs ${match.awayTeam}`,
+    startsAt: match.startsAt,
+  };
+}
+
+function logInfo(message: string, details?: Record<string, unknown>) {
+  if (details) {
+    console.info(`${LOG_PREFIX} ${message}`, details);
+    return;
+  }
+
+  console.info(`${LOG_PREFIX} ${message}`);
+}
+
+function logWarn(message: string, details?: Record<string, unknown>) {
+  if (details) {
+    console.warn(`${LOG_PREFIX} ${message}`, details);
+    return;
+  }
+
+  console.warn(`${LOG_PREFIX} ${message}`);
+}
+
+function logError(message: string, details?: Record<string, unknown>) {
+  if (details) {
+    console.error(`${LOG_PREFIX} ${message}`, details);
+    return;
+  }
+
+  console.error(`${LOG_PREFIX} ${message}`);
 }

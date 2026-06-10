@@ -31,12 +31,12 @@ export async function getPersistedOddsSummary(matchId: string): Promise<MatchOdd
 
 export async function saveOddsSummary(summary: MatchOddsSummary, providerEventId?: string) {
   if (!db) {
-    return { persisted: false };
+    return { persisted: false, error: "DATABASE_URL no configurada." };
   }
 
   const database = db;
-  const saved = await tryQuery(() =>
-    database
+  try {
+    await database
       .insert(oddsSnapshots)
       .values({
         matchId: summary.matchId,
@@ -53,10 +53,12 @@ export async function saveOddsSummary(summary: MatchOddsSummary, providerEventId
           payload: summary,
           fetchedAt: new Date(summary.generatedAt),
         },
-      }),
-  );
+      });
+  } catch (error) {
+    return { persisted: false, error: getErrorMessage(error) };
+  }
 
-  return { persisted: Boolean(saved) };
+  return { persisted: true };
 }
 
 async function tryQuery<T>(query: () => Promise<T>) {
@@ -65,4 +67,12 @@ async function tryQuery<T>(query: () => Promise<T>) {
   } catch {
     return null;
   }
+}
+
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return String(error);
 }

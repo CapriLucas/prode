@@ -158,41 +158,48 @@ export async function upsertMatches(matches: Match[]) {
 
 export async function replaceMatches(matches: Match[]) {
   if (!db) {
-    return { replaced: 0 };
+    return {
+      replaced: 0,
+      persisted: false,
+      error: "DATABASE_URL no configurada.",
+    };
   }
 
   const database = db;
-  const deleted = await tryQuery(() => database.delete(matchesTable));
 
-  if (!deleted) {
-    return { replaced: 0 };
+  try {
+    await database.transaction(async (tx) => {
+      await tx.delete(matchesTable);
+
+      if (!matches.length) {
+        return;
+      }
+
+      await tx.insert(matchesTable).values(
+        matches.map((match) => ({
+          id: match.id,
+          startsAt: new Date(match.startsAt),
+          phase: match.phase,
+          homeTeam: match.homeTeam,
+          awayTeam: match.awayTeam,
+          venue: match.venue,
+          status: match.status,
+          group: match.group,
+          placeholder: match.placeholder ?? false,
+        })),
+      );
+    });
+  } catch (error) {
+    console.log("error", error);
+
+    return {
+      replaced: 0,
+      persisted: false,
+      error: getErrorMessage(error),
+    };
   }
 
-  if (!matches.length) {
-    return { replaced: 0 };
-  }
-
-  const inserted = await tryQuery(() =>
-    database.insert(matchesTable).values(
-      matches.map((match) => ({
-        id: match.id,
-        startsAt: new Date(match.startsAt),
-        phase: match.phase,
-        homeTeam: match.homeTeam,
-        awayTeam: match.awayTeam,
-        venue: match.venue,
-        status: match.status,
-        group: match.group,
-        placeholder: match.placeholder ?? false,
-      })),
-    ),
-  );
-
-  if (!inserted) {
-    return { replaced: 0 };
-  }
-
-  return { replaced: matches.length };
+  return { replaced: matches.length, persisted: true };
 }
 
 async function tryQuery<T>(query: () => Promise<T>) {
@@ -201,4 +208,12 @@ async function tryQuery<T>(query: () => Promise<T>) {
   } catch {
     return null;
   }
+}
+
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return String(error);
 }

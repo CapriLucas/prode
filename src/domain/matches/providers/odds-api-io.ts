@@ -19,7 +19,8 @@ export type OddsApiIoEvent = {
   };
 };
 
-const BASE_URL = process.env.ODDS_API_IO_BASE_URL ?? "https://api.odds-api.io/v3";
+const BASE_URL =
+  process.env.ODDS_API_IO_BASE_URL ?? "https://api.odds-api.io/v3";
 const SPORT = process.env.ODDS_API_IO_SPORT ?? "football";
 const LEAGUE = process.env.ODDS_API_IO_LEAGUE ?? "international-fifa-world-cup";
 
@@ -40,9 +41,10 @@ export async function fetchOddsApiIoEvents() {
   eventsUrl.searchParams.set("league", LEAGUE);
 
   const response = await fetch(eventsUrl, { cache: "no-store" });
-
   if (!response.ok) {
-    throw new Error(`odds-api.io /events error ${response.status}: ${await response.text()}`);
+    throw new Error(
+      `odds-api.io /events error ${response.status}: ${await response.text()}`,
+    );
   }
 
   return {
@@ -64,12 +66,25 @@ export async function syncOddsApiIoMatches() {
   }
 
   const matches = result.events.map(mapEventToMatch);
-  const { replaced } = await replaceMatches(matches);
+  const persistence = await replaceMatches(matches);
+
+  if (!persistence.persisted) {
+    return {
+      synced: 0,
+      fetched: matches.length,
+      skipped: false,
+      persisted: false,
+      error: persistence.error,
+      message: `Se obtuvieron ${matches.length} partidos desde odds-api.io, pero no se pudieron persistir: ${persistence.error}`,
+    };
+  }
 
   return {
-    synced: replaced,
+    synced: persistence.replaced,
+    fetched: matches.length,
     skipped: false,
-    message: `Sincronizados ${replaced} partidos desde odds-api.io.`,
+    persisted: true,
+    message: `Sincronizados ${persistence.replaced} partidos desde odds-api.io.`,
   };
 }
 
