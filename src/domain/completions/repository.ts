@@ -14,7 +14,12 @@ export async function getCompletionRecords(): Promise<
     return {};
   }
 
-  const rows = await db.select().from(completionRecords);
+  const database = db;
+  const rows = await tryQuery(() => database.select().from(completionRecords));
+
+  if (!rows) {
+    return {};
+  }
 
   return Object.fromEntries(
     rows.map((row) => [
@@ -40,27 +45,41 @@ export async function saveCompletionRecord({
     return { persisted: false };
   }
 
+  const database = db;
+
   if (!completed) {
-    await db.delete(completionRecords).where(eq(completionRecords.matchId, matchId));
-    return { persisted: true };
+    const deleted = await tryQuery(() =>
+      database.delete(completionRecords).where(eq(completionRecords.matchId, matchId)),
+    );
+    return { persisted: Boolean(deleted) };
   }
 
-  await db
-    .insert(completionRecords)
-    .values({
-      matchId,
-      completed,
-      signature,
-      updatedAt: new Date(),
-    })
-    .onConflictDoUpdate({
-      target: completionRecords.matchId,
-      set: {
+  const saved = await tryQuery(() =>
+    database
+      .insert(completionRecords)
+      .values({
+        matchId,
         completed,
         signature,
         updatedAt: new Date(),
-      },
-    });
+      })
+      .onConflictDoUpdate({
+        target: completionRecords.matchId,
+        set: {
+          completed,
+          signature,
+          updatedAt: new Date(),
+        },
+      }),
+  );
 
-  return { persisted: true };
+  return { persisted: Boolean(saved) };
+}
+
+async function tryQuery<T>(query: () => Promise<T>) {
+  try {
+    return await query();
+  } catch {
+    return null;
+  }
 }

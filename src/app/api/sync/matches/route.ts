@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
-import { syncFootballDataOrg } from "@/domain/matches/providers/football-data-org";
+import { syncOddsApiIoMatches } from "@/domain/matches/providers/odds-api-io";
 
 export async function POST() {
-  const result = await syncFootballDataOrg();
+  const result = await syncOddsApiIoMatches();
 
   return NextResponse.json({
     ...result,

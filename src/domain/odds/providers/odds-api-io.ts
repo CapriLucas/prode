@@ -2,6 +2,7 @@ import type { Match } from "@/domain/matches/types";
 import type { BookmakerOdds, OddsMarket } from "../types";
 import { saveOddsSummary } from "../repository";
 import { getOddsSummaryFromBookmakers } from "../odds";
+import { fetchOddsApiIoEvents, type OddsApiIoEvent } from "@/domain/matches/providers/odds-api-io";
 
 type ApiMarket = {
   name: string;
@@ -9,17 +10,11 @@ type ApiMarket = {
   odds: Record<string, string | number>[];
 };
 
-type ApiEvent = {
-  id: number;
-  home: string;
-  away: string;
-  date: string;
-  status: string;
+type ApiEvent = OddsApiIoEvent & {
   bookmakers: Record<string, ApiMarket[]>;
 };
 
-const BASE_URL = "https://api.odds-api.io/v3";
-const LEAGUE = "international-fifa-world-cup";
+const BASE_URL = process.env.ODDS_API_IO_BASE_URL ?? "https://api.odds-api.io/v3";
 const BOOKMAKERS = ["Bet365"];
 const BATCH_SIZE = 10;
 
@@ -30,21 +25,18 @@ export async function syncOddsApiIo(matches: Match[]) {
     return { synced: 0, skipped: true, message: "ODDS_API_KEY_IO no configurada." };
   }
 
-  const eventsUrl = new URL(`${BASE_URL}/events`);
-  eventsUrl.searchParams.set("apiKey", apiKey);
-  eventsUrl.searchParams.set("sport", "football");
-  eventsUrl.searchParams.set("league", LEAGUE);
+  const eventsResult = await fetchOddsApiIoEvents();
 
-  const eventsRes = await fetch(eventsUrl, { cache: "no-store" });
-  if (!eventsRes.ok) {
-    throw new Error(`odds-api.io /events error ${eventsRes.status}: ${await eventsRes.text()}`);
+  if (eventsResult.skipped) {
+    return { synced: 0, skipped: true, message: eventsResult.message };
   }
 
-  const allEvents = (await eventsRes.json()) as ApiEvent[];
-  const upcomingEvents = allEvents.filter((e) => e.status === "pending" || e.status === "live");
+  const upcomingEvents = eventsResult.events.filter(
+    (event) => event.status === "pending" || event.status === "live",
+  );
 
   const oddsMap = new Map<number, ApiEvent>();
-  const ids = upcomingEvents.map((e) => e.id);
+  const ids = getEventIdsForMatches(matches, upcomingEvents);
 
   for (let i = 0; i < ids.length; i += BATCH_SIZE) {
     const batch = ids.slice(i, i + BATCH_SIZE);
@@ -67,7 +59,7 @@ export async function syncOddsApiIo(matches: Match[]) {
   let synced = 0;
 
   for (const match of matches) {
-    const event = findMatchingEvent(upcomingEvents, match);
+    const event = findEventForMatch(upcomingEvents, match);
     if (!event) continue;
 
     const eventWithOdds = oddsMap.get(event.id);
@@ -94,7 +86,7 @@ export async function syncOddsApiIo(matches: Match[]) {
   };
 }
 
-function findMatchingEvent(events: ApiEvent[], match: Match): ApiEvent | undefined {
+function findMatchingEvent(events: OddsApiIoEvent[], match: Match): OddsApiIoEvent | undefined {
   const home = normalize(match.homeTeam);
   const away = normalize(match.awayTeam);
 
@@ -107,6 +99,45 @@ function findMatchingEvent(events: ApiEvent[], match: Match): ApiEvent | undefin
       (eventAway.includes(away) || away.includes(eventAway))
     );
   });
+}
+
+function getEventIdsForMatches(matches: Match[], events: OddsApiIoEvent[]) {
+  const ids = new Set<number>();
+
+  for (const match of matches) {
+    const directId = getDirectEventId(match.id);
+
+    if (directId) {
+      ids.add(directId);
+      continue;
+    }
+
+    const event = findEventForMatch(events, match);
+
+    if (event) {
+      ids.add(event.id);
+    }
+  }
+
+  return [...ids];
+}
+
+function findEventForMatch(events: OddsApiIoEvent[], match: Match): OddsApiIoEvent | undefined {
+  const directId = getDirectEventId(match.id);
+
+  if (directId) {
+    return events.find((event) => event.id === directId);
+  }
+
+  return findMatchingEvent(events, match);
+}
+
+function getDirectEventId(matchId: string) {
+  if (!/^\d+$/.test(matchId)) {
+    return null;
+  }
+
+  return Number(matchId);
 }
 
 function mapBookmakers(event: ApiEvent): BookmakerOdds[] {

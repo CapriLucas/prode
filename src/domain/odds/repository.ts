@@ -9,11 +9,18 @@ export async function getPersistedOddsSummary(matchId: string): Promise<MatchOdd
     return getOddsSummary(matchId);
   }
 
-  const rows = await db
-    .select()
-    .from(oddsSnapshots)
-    .where(eq(oddsSnapshots.matchId, matchId))
-    .limit(1);
+  const database = db;
+  const rows = await tryQuery(() =>
+    database
+      .select()
+      .from(oddsSnapshots)
+      .where(eq(oddsSnapshots.matchId, matchId))
+      .limit(1),
+  );
+
+  if (!rows) {
+    return getOddsSummary(matchId);
+  }
 
   if (!rows.length) {
     return getOddsSummary(matchId);
@@ -27,24 +34,35 @@ export async function saveOddsSummary(summary: MatchOddsSummary, providerEventId
     return { persisted: false };
   }
 
-  await db
-    .insert(oddsSnapshots)
-    .values({
-      matchId: summary.matchId,
-      source: summary.source,
-      providerEventId,
-      payload: summary,
-      fetchedAt: new Date(summary.generatedAt),
-    })
-    .onConflictDoUpdate({
-      target: oddsSnapshots.matchId,
-      set: {
+  const database = db;
+  const saved = await tryQuery(() =>
+    database
+      .insert(oddsSnapshots)
+      .values({
+        matchId: summary.matchId,
         source: summary.source,
         providerEventId,
         payload: summary,
         fetchedAt: new Date(summary.generatedAt),
-      },
-    });
+      })
+      .onConflictDoUpdate({
+        target: oddsSnapshots.matchId,
+        set: {
+          source: summary.source,
+          providerEventId,
+          payload: summary,
+          fetchedAt: new Date(summary.generatedAt),
+        },
+      }),
+  );
 
-  return { persisted: true };
+  return { persisted: Boolean(saved) };
+}
+
+async function tryQuery<T>(query: () => Promise<T>) {
+  try {
+    return await query();
+  } catch {
+    return null;
+  }
 }
