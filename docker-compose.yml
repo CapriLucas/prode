@@ -1,0 +1,33 @@
+services:
+  app:
+    build: .
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    environment:
+      DATABASE_URL: postgresql://prode:${POSTGRES_PASSWORD:-prode}@db:5432/prode
+      ODDS_API_KEY_IO: ${ODDS_API_KEY_IO}
+      ODDS_API_IO_BASE_URL: ${ODDS_API_IO_BASE_URL:-https://api.odds-api.io/v3}
+      ODDS_API_IO_SPORT: ${ODDS_API_IO_SPORT:-football}
+      ODDS_API_IO_LEAGUE: ${ODDS_API_IO_LEAGUE:-international-fifa-world-cup}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: prode
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-prode}
+      POSTGRES_DB: prode
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U prode -d prode"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
