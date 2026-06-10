@@ -20,6 +20,7 @@ type TheOddsApiEvent = {
       outcomes: Array<{
         name: string;
         price: number;
+        point?: number;
       }>;
     }>;
   }>;
@@ -27,7 +28,7 @@ type TheOddsApiEvent = {
 
 const defaultSportKey = "soccer_fifa_world_cup";
 const defaultRegions = "us,uk,eu";
-const defaultMarkets = "h2h,correct_score";
+const defaultMarkets = "h2h,totals";
 
 export async function syncTheOddsApi(matches: Match[]) {
   const apiKey = process.env.ODDS_API_KEY;
@@ -116,7 +117,7 @@ function mapBookmakers(event: TheOddsApiEvent): BookmakerOdds[] {
 function mapMarket(
   event: TheOddsApiEvent,
   key: string,
-  outcomes: Array<{ name: string; price: number }>,
+  outcomes: Array<{ name: string; price: number; point?: number }>,
 ): OddsMarket | null {
   if (key === "h2h") {
     return {
@@ -138,6 +139,21 @@ function mapMarket(
         key: outcome.name,
         label: outcome.name,
         odds: outcome.price,
+      })),
+    };
+  }
+
+  if (key === "totals") {
+    return {
+      key: "totals",
+      scope: "90_minutes",
+      outcomes: outcomes.map((outcome) => ({
+        key: `${outcome.name.toLowerCase()}_${outcome.point ?? ""}`,
+        label: outcome.name === "Over"
+          ? `Más de ${outcome.point} goles`
+          : `Menos de ${outcome.point} goles`,
+        odds: outcome.price,
+        point: outcome.point,
       })),
     };
   }

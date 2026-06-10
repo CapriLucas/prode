@@ -38,6 +38,7 @@ export function getOddsSummaryFromBookmakers({
   const markets = [
     buildConsensusMarket(bookmakers, "match_winner", expected),
     buildConsensusMarket(bookmakers, "correct_score", expected),
+    buildConsensusMarket(bookmakers, "totals", expected),
   ].filter((market): market is ConsensusMarket => Boolean(market));
 
   const warnings = buildWarnings(markets);

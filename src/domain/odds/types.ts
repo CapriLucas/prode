@@ -1,4 +1,4 @@
-export type MarketKey = "match_winner" | "correct_score";
+export type MarketKey = "match_winner" | "correct_score" | "totals";
 
 export type MarketScope = "90_minutes" | "includes_extra_time";
 
@@ -18,6 +18,7 @@ export type OddsOutcome = {
   key: string;
   label: string;
   odds: number;
+  point?: number;
   includesPenaltyShootout?: boolean;
 };
 

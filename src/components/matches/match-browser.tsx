@@ -629,11 +629,6 @@ export function MatchBrowser({
                 </div>
               ) : null}
 
-              <div className="mt-5 rounded-md border border-[var(--line)] bg-slate-50 p-3 text-sm leading-6 text-[var(--muted)]">
-                Las probabilidades se obtienen desde un proveedor mock con formato de API.
-                Cuando exista una API key, esta misma vista puede conectarse al proveedor real.
-              </div>
-
               <OddsPanel
                 isLoading={isLoadingOdds}
                 odds={odds}
@@ -683,6 +678,7 @@ function OddsPanel({
 }) {
   const matchWinner = odds?.markets.find((market) => market.key === "match_winner");
   const correctScore = odds?.markets.find((market) => market.key === "correct_score");
+  const totals = odds?.markets.find((market) => market.key === "totals");
 
   return (
     <section className="mt-5 border-t border-[var(--line)] pt-5">
@@ -756,6 +752,10 @@ function OddsPanel({
           ) : (
             <MissingMarket label="resultado exacto" />
           )}
+
+          {totals ? (
+            <MarketCard market={totals} title="Goles en el partido" />
+          ) : null}
         </div>
       ) : null}
     </section>
