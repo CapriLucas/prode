@@ -37,7 +37,12 @@ type MatchBrowserProps = {
   reviewItems: MatchReviewItem[];
 };
 
-type ReviewStatusFilter = "todos" | "pendiente" | "completado" | "sin-recomendacion" | "advertencia";
+type ReviewStatusFilter =
+  | "todos"
+  | "pendiente"
+  | "completado"
+  | "sin-recomendacion"
+  | "advertencia";
 type ReviewSort = "fecha" | "fase" | "confianza";
 type CompletionRecord = {
   completed: boolean;
@@ -62,7 +67,8 @@ export function MatchBrowser({
   const [oddsError, setOddsError] = useState("");
   const [isLoadingOdds, setIsLoadingOdds] = useState(false);
   const [oddsRefreshKey, setOddsRefreshKey] = useState(0);
-  const [winnerPrediction, setWinnerPrediction] = useState<WinnerPredictionResult | null>(null);
+  const [winnerPrediction, setWinnerPrediction] =
+    useState<WinnerPredictionResult | null>(null);
   const [winnerError, setWinnerError] = useState("");
   const [correctScorePrediction, setCorrectScorePrediction] =
     useState<CorrectScorePredictionResult | null>(null);
@@ -72,9 +78,9 @@ export function MatchBrowser({
   const [finalRecommendationError, setFinalRecommendationError] = useState("");
   const [statusFilter, setStatusFilter] = useState<ReviewStatusFilter>("todos");
   const [sortBy, setSortBy] = useState<ReviewSort>("fecha");
-  const [completionRecords, setCompletionRecords] = useState<Record<string, CompletionRecord>>(
-    () => ({ ...initialCompletionRecords, ...readCompletionRecords() }),
-  );
+  const [completionRecords, setCompletionRecords] = useState<
+    Record<string, CompletionRecord>
+  >(() => ({ ...initialCompletionRecords, ...readCompletionRecords() }));
   const [copiedMatchId, setCopiedMatchId] = useState("");
   const [isSyncingMatches, setIsSyncingMatches] = useState(false);
   const [isSyncingOdds, setIsSyncingOdds] = useState(false);
@@ -91,7 +97,10 @@ export function MatchBrowser({
   );
 
   const dates = useMemo(
-    () => Array.from(new Set(matches.map((match) => match.startsAt.slice(0, 10)))).sort(),
+    () =>
+      Array.from(
+        new Set(matches.map((match) => match.startsAt.slice(0, 10))),
+      ).sort(),
     [matches],
   );
 
@@ -106,9 +115,9 @@ export function MatchBrowser({
     return Array.from(values).sort((a, b) => a.localeCompare(b));
   }, [matches]);
 
-  const filteredMatches = useMemo(
-    () => {
-      const baseMatches = filterMatches(matches, { phase, date, team }).filter((match) => {
+  const filteredMatches = useMemo(() => {
+    const baseMatches = filterMatches(matches, { phase, date, team }).filter(
+      (match) => {
         const review = reviewByMatchId.get(match.id);
         const completion = completionRecords[match.id];
         const isCompleted = Boolean(completion?.completed);
@@ -132,15 +141,25 @@ export function MatchBrowser({
         }
 
         return true;
-      });
+      },
+    );
 
-      return sortMatches(baseMatches, sortBy, reviewByMatchId);
-    },
-    [completionRecords, date, matches, phase, reviewByMatchId, sortBy, statusFilter, team],
-  );
+    return sortMatches(baseMatches, sortBy, reviewByMatchId);
+  }, [
+    completionRecords,
+    date,
+    matches,
+    phase,
+    reviewByMatchId,
+    sortBy,
+    statusFilter,
+    team,
+  ]);
 
   const selectedMatch =
-    matches.find((match) => match.id === selectedMatchId) ?? filteredMatches[0] ?? null;
+    matches.find((match) => match.id === selectedMatchId) ??
+    filteredMatches[0] ??
+    null;
 
   useEffect(() => {
     if (!isModalOpen || !selectedMatch?.id) {
@@ -157,13 +176,17 @@ export function MatchBrowser({
       setFinalRecommendationError("");
 
       try {
-        const [oddsResponse, winnerResponse, correctScoreResponse, finalResponse] =
-          await Promise.all([
-            fetch(`/api/odds?matchId=${matchId}`),
-            fetch(`/api/predictions/winner?matchId=${matchId}`),
-            fetch(`/api/predictions/correct-score?matchId=${matchId}`),
-            fetch(`/api/predictions/final-score?matchId=${matchId}`),
-          ]);
+        const [
+          oddsResponse,
+          winnerResponse,
+          correctScoreResponse,
+          finalResponse,
+        ] = await Promise.all([
+          fetch(`/api/odds?matchId=${matchId}`),
+          fetch(`/api/predictions/winner?matchId=${matchId}`),
+          fetch(`/api/predictions/correct-score?matchId=${matchId}`),
+          fetch(`/api/predictions/final-score?matchId=${matchId}`),
+        ]);
 
         if (!oddsResponse.ok) {
           throw new Error("No se pudieron cargar las probabilidades");
@@ -205,9 +228,15 @@ export function MatchBrowser({
           setCorrectScorePrediction(null);
           setFinalRecommendation(null);
           setOddsError("No se pudieron cargar las probabilidades.");
-          setWinnerError("No se pudo cargar la recomendacion de ganador/empate.");
-          setCorrectScoreError("No se pudo cargar la recomendacion de resultado exacto.");
-          setFinalRecommendationError("No se pudo cargar la recomendacion final.");
+          setWinnerError(
+            "No se pudo cargar la recomendacion de ganador/empate.",
+          );
+          setCorrectScoreError(
+            "No se pudo cargar la recomendacion de resultado exacto.",
+          );
+          setFinalRecommendationError(
+            "No se pudo cargar la recomendacion final.",
+          );
         }
       } finally {
         if (!cancelled) {
@@ -237,25 +266,27 @@ export function MatchBrowser({
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [isModalOpen]);
 
-  const statusCounts = useMemo(
-    () => {
-      const completed = matches.filter((match) => completionRecords[match.id]?.completed).length;
-      const withRecommendation = matches.filter(
-        (match) => reviewByMatchId.get(match.id)?.recommendation.available,
-      ).length;
+  const statusCounts = useMemo(() => {
+    const completed = matches.filter(
+      (match) => completionRecords[match.id]?.completed,
+    ).length;
+    const withRecommendation = matches.filter(
+      (match) => reviewByMatchId.get(match.id)?.recommendation.available,
+    ).length;
 
-      return {
-        total: matches.length,
-        completed,
-        pending: matches.length - completed,
-        withRecommendation,
-      };
-    },
-    [completionRecords, matches, reviewByMatchId],
-  );
+    return {
+      total: matches.length,
+      completed,
+      pending: matches.length - completed,
+      withRecommendation,
+    };
+  }, [completionRecords, matches, reviewByMatchId]);
 
   useEffect(() => {
-    window.localStorage.setItem("prode:completed-matches", JSON.stringify(completionRecords));
+    window.localStorage.setItem(
+      "prode:completed-matches",
+      JSON.stringify(completionRecords),
+    );
   }, [completionRecords]);
 
   function clearFilters() {
@@ -294,7 +325,9 @@ export function MatchBrowser({
     const trimmed = userScoreInput.trim();
 
     if (trimmed && !/^\d+-\d+$/.test(trimmed)) {
-      setUserScoreError("Formato inválido. Usá el formato goles-goles, ej. 2-1.");
+      setUserScoreError(
+        "Formato inválido. Usá el formato goles-goles, ej. 2-1.",
+      );
       return;
     }
 
@@ -318,7 +351,9 @@ export function MatchBrowser({
       return;
     }
 
-    await navigator.clipboard.writeText(review.recommendation.recommended.score);
+    await navigator.clipboard.writeText(
+      review.recommendation.recommended.score,
+    );
     setCopiedMatchId(matchId);
     window.setTimeout(() => setCopiedMatchId(""), 1600);
   }
@@ -382,10 +417,12 @@ export function MatchBrowser({
           <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-red-50 text-red-700">
             <AlertCircle size={24} aria-hidden="true" />
           </div>
-          <h1 className="text-2xl font-semibold">No se pudieron cargar los partidos</h1>
+          <h1 className="text-2xl font-semibold">
+            No se pudieron cargar los partidos
+          </h1>
           <p className="mt-3 max-w-2xl text-sm leading-6 text-[var(--muted)]">
-            La fuente de partidos no esta disponible en este momento. Podes reintentar
-            para volver a consultar el calendario del Mundial 2026.
+            La fuente de partidos no esta disponible en este momento. Podes
+            reintentar para volver a consultar el calendario del Mundial 2026.
           </p>
           <button
             className="mt-6 inline-flex items-center gap-2 rounded-md bg-[var(--accent)] px-4 py-2 text-sm font-medium text-white hover:bg-[var(--accent-strong)]"
@@ -406,446 +443,472 @@ export function MatchBrowser({
 
   return (
     <>
-    <section className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-5 py-6 lg:px-8">
-      <header className="flex flex-col gap-5 border-b border-[var(--line)] pb-6 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <div className="mb-3 inline-flex items-center gap-2 rounded-md border border-[var(--line)] bg-white px-3 py-1 text-sm text-[var(--muted)]">
-            <Trophy size={16} aria-hidden="true" />
-            Mundial 2026
-          </div>
-          <h1 className="max-w-3xl text-3xl font-semibold tracking-normal text-[var(--foreground)]">
-            Partidos para completar el prode
-          </h1>
-          <p className="mt-3 max-w-3xl text-sm leading-6 text-[var(--muted)]">
-            Consulta el calendario, filtra por fase, fecha o seleccion, y elegi el
-            partido que despues vas a analizar con probabilidades y recomendaciones.
-          </p>
-        </div>
-
-        <div className="flex flex-col items-start gap-3 lg:items-end">
-          <div className="grid grid-cols-3 gap-3 text-sm">
-            <Metric label="Partidos" value={statusCounts.total} />
-            <Metric label="Completados" value={statusCounts.completed} />
-            <Metric label="Con recomend." value={statusCounts.withRecommendation} />
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <div className="flex flex-col items-end gap-1">
-              <button
-                className="inline-flex items-center gap-2 rounded-md border border-[var(--line)] px-3 py-2 text-sm font-medium hover:bg-slate-50 disabled:opacity-60"
-                disabled={isSyncingMatches || isSyncingOdds}
-                onClick={syncMatches}
-                type="button"
-              >
-                <RefreshCw
-                  className={isSyncingMatches ? "animate-spin" : ""}
-                  size={15}
-                  aria-hidden="true"
-                />
-                {isSyncingMatches ? "Sincronizando..." : "Sync partidos"}
-              </button>
-              {syncMatchesMessage && (
-                <span className="max-w-[200px] text-right text-xs text-[var(--muted)]">
-                  {syncMatchesMessage}
-                </span>
-              )}
+      <section className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-5 py-6 lg:px-8">
+        <header className="flex flex-col gap-5 border-b border-[var(--line)] pb-6 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <div className="mb-3 inline-flex items-center gap-2 rounded-md border border-[var(--line)] bg-white px-3 py-1 text-sm text-[var(--muted)]">
+              <Trophy size={16} aria-hidden="true" />
+              Mundial 2026
             </div>
-            <div className="flex flex-col items-end gap-1">
-              <button
-                className="inline-flex items-center gap-2 rounded-md border border-[var(--line)] px-3 py-2 text-sm font-medium hover:bg-slate-50 disabled:opacity-60"
-                disabled={isSyncingMatches || isSyncingOdds}
-                onClick={syncOdds}
-                type="button"
-              >
-                <RefreshCw
-                  className={isSyncingOdds ? "animate-spin" : ""}
-                  size={15}
-                  aria-hidden="true"
-                />
-                {isSyncingOdds ? "Sincronizando..." : "Sync odds"}
-              </button>
-              {syncOddsMessage && (
-                <span className="max-w-[200px] text-right text-xs text-[var(--muted)]">
-                  {syncOddsMessage}
-                </span>
-              )}
-            </div>
+            <h1 className="max-w-3xl text-3xl font-semibold tracking-normal text-[var(--foreground)]">
+              Partidos para completar el prode
+            </h1>
+            <p className="mt-3 max-w-3xl text-sm leading-6 text-[var(--muted)]">
+              Consulta el calendario, filtra por fase, fecha o seleccion, y
+              elegi el partido que despues vas a analizar con probabilidades y
+              recomendaciones. App creada por Lucas Capriata
+            </p>
           </div>
-        </div>
-      </header>
 
-      <div className="flex flex-col gap-4">
-        <div className="flex min-w-0 flex-col gap-4">
-          <section className="rounded-lg border border-[var(--line)] bg-[var(--panel)] p-4 shadow-sm">
-            <div className="mb-4 flex items-center gap-2 text-sm font-medium">
-              <Filter size={16} aria-hidden="true" />
-              Filtros
+          <div className="flex flex-col items-start gap-3 lg:items-end">
+            <div className="grid grid-cols-3 gap-3 text-sm">
+              <Metric label="Partidos" value={statusCounts.total} />
+              <Metric label="Completados" value={statusCounts.completed} />
+              <Metric
+                label="Con recomend."
+                value={statusCounts.withRecommendation}
+              />
             </div>
-
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[1fr_1fr_1.3fr_1fr_1fr_auto]">
-              <label className="flex flex-col gap-1 text-sm">
-                <span className="text-[var(--muted)]">Fase</span>
-                <select
-                  className="h-10 rounded-md border border-[var(--line)] bg-white px-3 outline-none focus:border-[var(--accent)]"
-                  onChange={(event) => setPhase(event.target.value as MatchPhase | "Todas")}
-                  value={phase}
+            <div className="flex flex-wrap gap-2">
+              <div className="flex flex-col items-end gap-1">
+                <button
+                  className="inline-flex items-center gap-2 rounded-md border border-[var(--line)] px-3 py-2 text-sm font-medium hover:bg-slate-50 disabled:opacity-60"
+                  disabled={isSyncingMatches || isSyncingOdds}
+                  onClick={syncMatches}
+                  type="button"
                 >
-                  {phases.map((item) => (
-                    <option key={item} value={item}>
-                      {item}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="flex flex-col gap-1 text-sm">
-                <span className="text-[var(--muted)]">Fecha</span>
-                <select
-                  className="h-10 rounded-md border border-[var(--line)] bg-white px-3 outline-none focus:border-[var(--accent)]"
-                  onChange={(event) => setDate(event.target.value)}
-                  value={date}
-                >
-                  <option value="">Todas</option>
-                  {dates.map((item) => (
-                    <option key={item} value={item}>
-                      {formatDateLabel(item)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="flex flex-col gap-1 text-sm">
-                <span className="text-[var(--muted)]">Seleccion o placeholder</span>
-                <div className="relative">
-                  <Search
-                    className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted)]"
-                    size={16}
+                  <RefreshCw
+                    className={isSyncingMatches ? "animate-spin" : ""}
+                    size={15}
                     aria-hidden="true"
                   />
-                  <input
-                    className="h-10 w-full rounded-md border border-[var(--line)] bg-white pl-9 pr-3 outline-none focus:border-[var(--accent)]"
-                    list="teams"
-                    onChange={(event) => setTeam(event.target.value)}
-                    placeholder="Argentina, Ganador Grupo A..."
-                    value={team}
-                  />
-                  <datalist id="teams">
-                    {teams.map((item) => (
-                      <option key={item} value={item} />
-                    ))}
-                  </datalist>
-                </div>
-              </label>
-
-              <label className="flex flex-col gap-1 text-sm">
-                <span className="text-[var(--muted)]">Estado prode</span>
-                <select
-                  className="h-10 rounded-md border border-[var(--line)] bg-white px-3 outline-none focus:border-[var(--accent)]"
-                  onChange={(event) =>
-                    setStatusFilter(event.target.value as ReviewStatusFilter)
-                  }
-                  value={statusFilter}
-                >
-                  <option value="todos">Todos</option>
-                  <option value="pendiente">Pendientes</option>
-                  <option value="completado">Completados</option>
-                  <option value="sin-recomendacion">Sin recomendación</option>
-                  <option value="advertencia">Con advertencia</option>
-                </select>
-              </label>
-
-              <label className="flex flex-col gap-1 text-sm">
-                <span className="text-[var(--muted)]">Orden</span>
-                <select
-                  className="h-10 rounded-md border border-[var(--line)] bg-white px-3 outline-none focus:border-[var(--accent)]"
-                  onChange={(event) => setSortBy(event.target.value as ReviewSort)}
-                  value={sortBy}
-                >
-                  <option value="fecha">Fecha</option>
-                  <option value="fase">Fase</option>
-                  <option value="confianza">Confianza</option>
-                </select>
-              </label>
-
-              <div className="flex items-end gap-2">
+                  {isSyncingMatches ? "Sincronizando..." : "Sync partidos"}
+                </button>
+                {syncMatchesMessage && (
+                  <span className="max-w-[200px] text-right text-xs text-[var(--muted)]">
+                    {syncMatchesMessage}
+                  </span>
+                )}
+              </div>
+              <div className="flex flex-col items-end gap-1">
                 <button
-                  className="h-10 rounded-md border border-[var(--line)] px-3 text-sm font-medium hover:bg-slate-50"
-                  onClick={clearFilters}
+                  className="inline-flex items-center gap-2 rounded-md border border-[var(--line)] px-3 py-2 text-sm font-medium hover:bg-slate-50 disabled:opacity-60"
+                  disabled={isSyncingMatches || isSyncingOdds}
+                  onClick={syncOdds}
                   type="button"
                 >
-                  Limpiar
+                  <RefreshCw
+                    className={isSyncingOdds ? "animate-spin" : ""}
+                    size={15}
+                    aria-hidden="true"
+                  />
+                  {isSyncingOdds ? "Sincronizando..." : "Sync odds"}
                 </button>
+                {syncOddsMessage && (
+                  <span className="max-w-[200px] text-right text-xs text-[var(--muted)]">
+                    {syncOddsMessage}
+                  </span>
+                )}
               </div>
             </div>
-          </section>
+          </div>
+        </header>
 
-          <section className="overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--panel)] shadow-sm">
-            <div className="flex items-center justify-between border-b border-[var(--line)] px-4 py-3">
-              <h2 className="text-sm font-semibold">
-                {filteredMatches.length} partidos encontrados
-              </h2>
+        <div className="flex flex-col gap-4">
+          <div className="flex min-w-0 flex-col gap-4">
+            <section className="rounded-lg border border-[var(--line)] bg-[var(--panel)] p-4 shadow-sm">
+              <div className="mb-4 flex items-center gap-2 text-sm font-medium">
+                <Filter size={16} aria-hidden="true" />
+                Filtros
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[1fr_1fr_1.3fr_1fr_1fr_auto]">
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="text-[var(--muted)]">Fase</span>
+                  <select
+                    className="h-10 rounded-md border border-[var(--line)] bg-white px-3 outline-none focus:border-[var(--accent)]"
+                    onChange={(event) =>
+                      setPhase(event.target.value as MatchPhase | "Todas")
+                    }
+                    value={phase}
+                  >
+                    {phases.map((item) => (
+                      <option key={item} value={item}>
+                        {item}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="text-[var(--muted)]">Fecha</span>
+                  <select
+                    className="h-10 rounded-md border border-[var(--line)] bg-white px-3 outline-none focus:border-[var(--accent)]"
+                    onChange={(event) => setDate(event.target.value)}
+                    value={date}
+                  >
+                    <option value="">Todas</option>
+                    {dates.map((item) => (
+                      <option key={item} value={item}>
+                        {formatDateLabel(item)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="text-[var(--muted)]">
+                    Seleccion o placeholder
+                  </span>
+                  <div className="relative">
+                    <Search
+                      className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted)]"
+                      size={16}
+                      aria-hidden="true"
+                    />
+                    <input
+                      className="h-10 w-full rounded-md border border-[var(--line)] bg-white pl-9 pr-3 outline-none focus:border-[var(--accent)]"
+                      list="teams"
+                      onChange={(event) => setTeam(event.target.value)}
+                      placeholder="Argentina, Ganador Grupo A..."
+                      value={team}
+                    />
+                    <datalist id="teams">
+                      {teams.map((item) => (
+                        <option key={item} value={item} />
+                      ))}
+                    </datalist>
+                  </div>
+                </label>
+
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="text-[var(--muted)]">Estado prode</span>
+                  <select
+                    className="h-10 rounded-md border border-[var(--line)] bg-white px-3 outline-none focus:border-[var(--accent)]"
+                    onChange={(event) =>
+                      setStatusFilter(event.target.value as ReviewStatusFilter)
+                    }
+                    value={statusFilter}
+                  >
+                    <option value="todos">Todos</option>
+                    <option value="pendiente">Pendientes</option>
+                    <option value="completado">Completados</option>
+                    <option value="sin-recomendacion">Sin recomendación</option>
+                    <option value="advertencia">Con advertencia</option>
+                  </select>
+                </label>
+
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="text-[var(--muted)]">Orden</span>
+                  <select
+                    className="h-10 rounded-md border border-[var(--line)] bg-white px-3 outline-none focus:border-[var(--accent)]"
+                    onChange={(event) =>
+                      setSortBy(event.target.value as ReviewSort)
+                    }
+                    value={sortBy}
+                  >
+                    <option value="fecha">Fecha</option>
+                    <option value="fase">Fase</option>
+                    <option value="confianza">Confianza</option>
+                  </select>
+                </label>
+
+                <div className="flex items-end gap-2">
+                  <button
+                    className="h-10 rounded-md border border-[var(--line)] px-3 text-sm font-medium hover:bg-slate-50"
+                    onClick={clearFilters}
+                    type="button"
+                  >
+                    Limpiar
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            <section className="overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--panel)] shadow-sm">
+              <div className="flex items-center justify-between border-b border-[var(--line)] px-4 py-3">
+                <h2 className="text-sm font-semibold">
+                  {filteredMatches.length} partidos encontrados
+                </h2>
+                <button
+                  className="inline-flex items-center gap-2 rounded-md border border-[var(--line)] px-3 py-2 text-sm font-medium hover:bg-slate-50"
+                  disabled={isRefreshing}
+                  onClick={refreshMatches}
+                  type="button"
+                >
+                  <RefreshCw
+                    className={isRefreshing ? "animate-spin" : ""}
+                    size={15}
+                    aria-hidden="true"
+                  />
+                  {isRefreshing ? "Actualizando" : "Actualizar"}
+                </button>
+              </div>
+
+              {filteredMatches.length === 0 ? (
+                <div className="px-4 py-12 text-center">
+                  <CalendarDays
+                    className="mx-auto mb-3 text-[var(--muted)]"
+                    size={32}
+                    aria-hidden="true"
+                  />
+                  <h3 className="text-base font-semibold">
+                    No hay partidos para esos filtros
+                  </h3>
+                  <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[var(--muted)]">
+                    Proba cambiar la fase, la fecha o la seleccion para volver a
+                    ver partidos.
+                  </p>
+                  <button
+                    className="mt-4 rounded-md bg-[var(--accent)] px-4 py-2 text-sm font-medium text-white hover:bg-[var(--accent-strong)]"
+                    onClick={clearFilters}
+                    type="button"
+                  >
+                    Limpiar filtros
+                  </button>
+                </div>
+              ) : (
+                <div className="divide-y divide-[var(--line)]">
+                  {filteredMatches.map((match) => {
+                    const review = reviewByMatchId.get(match.id);
+                    const completion = completionRecords[match.id];
+                    const isCompleted = Boolean(completion?.completed);
+                    const recommendationUpdated =
+                      isCompleted &&
+                      completion?.signature !== review?.signature;
+
+                    return (
+                      <article
+                        className={`grid gap-3 px-4 py-4 md:grid-cols-[minmax(0,1fr)_260px] ${
+                          selectedMatch?.id === match.id
+                            ? "bg-emerald-50/70"
+                            : "bg-white"
+                        }`}
+                        key={match.id}
+                      >
+                        <div className="min-w-0">
+                          <div className="mb-2 flex flex-wrap items-center gap-2">
+                            <StatusBadge status={match.status} />
+                            <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700">
+                              {match.phase}
+                            </span>
+                            {match.group ? (
+                              <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700">
+                                {match.group}
+                              </span>
+                            ) : null}
+                            {match.placeholder ? (
+                              <span className="rounded-md bg-[var(--warning-bg)] px-2 py-1 text-xs font-medium text-[var(--warning)]">
+                                Equipos por definir
+                              </span>
+                            ) : null}
+                            {isCompleted ? (
+                              <span className="rounded-md bg-emerald-100 px-2 py-1 text-xs font-medium text-emerald-800">
+                                {completion?.userScore
+                                  ? `Mi predicción: ${completion.userScore}`
+                                  : "Completado"}
+                              </span>
+                            ) : null}
+                            {recommendationUpdated ? (
+                              <span className="rounded-md bg-amber-100 px-2 py-1 text-xs font-medium text-amber-800">
+                                Recomendación actualizada
+                              </span>
+                            ) : null}
+                          </div>
+                          <button
+                            className="text-left text-lg font-semibold hover:text-[var(--accent)]"
+                            onClick={() => setSelectedMatchId(match.id)}
+                            type="button"
+                          >
+                            {match.homeTeam} vs {match.awayTeam}
+                          </button>
+                          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2 text-sm text-[var(--muted)]">
+                            <span className="inline-flex items-center gap-1.5">
+                              <Clock3 size={15} aria-hidden="true" />
+                              {formatMatchDate(match.startsAt)}
+                            </span>
+                            <span className="inline-flex items-center gap-1.5">
+                              <MapPin size={15} aria-hidden="true" />
+                              {match.venue}
+                            </span>
+                          </div>
+                          <MatchReviewSummary review={review} />
+                        </div>
+
+                        <div className="flex flex-col justify-between gap-3">
+                          <div className="flex justify-end">
+                            <button
+                              className="inline-flex items-center gap-2 rounded-md border border-[var(--line)] px-3 py-2 text-sm font-medium hover:bg-slate-50"
+                              onClick={() => {
+                                const existing = completionRecords[match.id];
+                                const review = reviewByMatchId.get(match.id);
+                                const prefill =
+                                  existing?.userScore ??
+                                  (review?.recommendation.available
+                                    ? review.recommendation.recommended.score
+                                    : "");
+                                setSelectedMatchId(match.id);
+                                setUserScoreInput(prefill);
+                                setUserScoreError("");
+                                setIsModalOpen(true);
+                              }}
+                              type="button"
+                            >
+                              Detalle
+                              <ChevronRight size={16} aria-hidden="true" />
+                            </button>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              className="inline-flex items-center justify-center gap-2 rounded-md border border-[var(--line)] px-3 py-2 text-sm font-medium hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                              disabled={!review?.recommendation.available}
+                              onClick={() => copyRecommendedScore(match.id)}
+                              type="button"
+                            >
+                              {copiedMatchId === match.id ? (
+                                <ClipboardCheck size={15} aria-hidden="true" />
+                              ) : (
+                                <Clipboard size={15} aria-hidden="true" />
+                              )}
+                              {copiedMatchId === match.id
+                                ? "Copiado"
+                                : "Copiar"}
+                            </button>
+                            <button
+                              className={`inline-flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium ${
+                                isCompleted
+                                  ? "border border-emerald-200 bg-emerald-50 text-emerald-800"
+                                  : "bg-[var(--accent)] text-white hover:bg-[var(--accent-strong)]"
+                              }`}
+                              onClick={() => toggleCompleted(match.id)}
+                              type="button"
+                            >
+                              <Check size={15} aria-hidden="true" />
+                              {isCompleted ? "Hecho" : "Completar"}
+                            </button>
+                          </div>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+          </div>
+        </div>
+      </section>
+
+      {isModalOpen && selectedMatch ? (
+        <div
+          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 px-4 py-8"
+          onClick={(e) => {
+            if (
+              modalRef.current &&
+              !modalRef.current.contains(e.target as Node)
+            ) {
+              setIsModalOpen(false);
+            }
+          }}
+        >
+          <div
+            className="relative w-full max-w-2xl rounded-xl border border-[var(--line)] bg-white shadow-xl"
+            ref={modalRef}
+          >
+            <div className="flex items-start justify-between border-b border-[var(--line)] p-5">
+              <div>
+                <h2 className="text-xl font-semibold">
+                  {selectedMatch.homeTeam} vs {selectedMatch.awayTeam}
+                </h2>
+                <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-[var(--muted)]">
+                  <span className="inline-flex items-center gap-1.5">
+                    <Clock3 size={14} aria-hidden="true" />
+                    {formatMatchDate(selectedMatch.startsAt)}
+                  </span>
+                  <span>{selectedMatch.phase}</span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <MapPin size={14} aria-hidden="true" />
+                    {selectedMatch.venue}
+                  </span>
+                </div>
+              </div>
               <button
-                className="inline-flex items-center gap-2 rounded-md border border-[var(--line)] px-3 py-2 text-sm font-medium hover:bg-slate-50"
-                disabled={isRefreshing}
-                onClick={refreshMatches}
+                className="ml-4 flex-shrink-0 rounded-md p-1 hover:bg-slate-100"
+                onClick={() => setIsModalOpen(false)}
                 type="button"
+                aria-label="Cerrar"
               >
-                <RefreshCw
-                  className={isRefreshing ? "animate-spin" : ""}
-                  size={15}
-                  aria-hidden="true"
-                />
-                {isRefreshing ? "Actualizando" : "Actualizar"}
+                <X size={20} />
               </button>
             </div>
 
-            {filteredMatches.length === 0 ? (
-              <div className="px-4 py-12 text-center">
-                <CalendarDays
-                  className="mx-auto mb-3 text-[var(--muted)]"
-                  size={32}
-                  aria-hidden="true"
+            <div className="border-b border-[var(--line)] p-5">
+              <h3 className="mb-3 text-sm font-semibold">Tu predicción</h3>
+              {completionRecords[selectedMatch.id]?.userScore ? (
+                <div className="mb-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+                  Guardado:{" "}
+                  <span className="font-semibold">
+                    {completionRecords[selectedMatch.id].userScore}
+                  </span>
+                </div>
+              ) : null}
+              <div className="flex gap-2">
+                <input
+                  className="h-10 w-28 rounded-md border border-[var(--line)] px-3 text-sm outline-none focus:border-[var(--accent)]"
+                  placeholder="ej. 2-1"
+                  type="text"
+                  value={userScoreInput}
+                  onChange={(e) => {
+                    setUserScoreInput(e.target.value);
+                    setUserScoreError("");
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") saveMyPrediction(selectedMatch.id);
+                  }}
                 />
-                <h3 className="text-base font-semibold">No hay partidos para esos filtros</h3>
-                <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[var(--muted)]">
-                  Proba cambiar la fase, la fecha o la seleccion para volver a ver partidos.
-                </p>
                 <button
-                  className="mt-4 rounded-md bg-[var(--accent)] px-4 py-2 text-sm font-medium text-white hover:bg-[var(--accent-strong)]"
-                  onClick={clearFilters}
+                  className="inline-flex items-center gap-2 rounded-md bg-[var(--accent)] px-4 py-2 text-sm font-medium text-white hover:bg-[var(--accent-strong)]"
+                  onClick={() => saveMyPrediction(selectedMatch.id)}
                   type="button"
                 >
-                  Limpiar filtros
+                  <Check size={15} aria-hidden="true" />
+                  Guardar predicción
                 </button>
               </div>
-            ) : (
-              <div className="divide-y divide-[var(--line)]">
-                {filteredMatches.map((match) => {
-                  const review = reviewByMatchId.get(match.id);
-                  const completion = completionRecords[match.id];
-                  const isCompleted = Boolean(completion?.completed);
-                  const recommendationUpdated =
-                    isCompleted && completion?.signature !== review?.signature;
-
-                  return (
-                    <article
-                      className={`grid gap-3 px-4 py-4 md:grid-cols-[minmax(0,1fr)_260px] ${
-                        selectedMatch?.id === match.id ? "bg-emerald-50/70" : "bg-white"
-                      }`}
-                      key={match.id}
-                    >
-                      <div className="min-w-0">
-                        <div className="mb-2 flex flex-wrap items-center gap-2">
-                          <StatusBadge status={match.status} />
-                          <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700">
-                            {match.phase}
-                          </span>
-                          {match.group ? (
-                            <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700">
-                              {match.group}
-                            </span>
-                          ) : null}
-                          {match.placeholder ? (
-                            <span className="rounded-md bg-[var(--warning-bg)] px-2 py-1 text-xs font-medium text-[var(--warning)]">
-                              Equipos por definir
-                            </span>
-                          ) : null}
-                          {isCompleted ? (
-                            <span className="rounded-md bg-emerald-100 px-2 py-1 text-xs font-medium text-emerald-800">
-                              {completion?.userScore ? `Mi predicción: ${completion.userScore}` : "Completado"}
-                            </span>
-                          ) : null}
-                          {recommendationUpdated ? (
-                            <span className="rounded-md bg-amber-100 px-2 py-1 text-xs font-medium text-amber-800">
-                              Recomendación actualizada
-                            </span>
-                          ) : null}
-                        </div>
-                        <button
-                          className="text-left text-lg font-semibold hover:text-[var(--accent)]"
-                          onClick={() => setSelectedMatchId(match.id)}
-                          type="button"
-                        >
-                          {match.homeTeam} vs {match.awayTeam}
-                        </button>
-                        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2 text-sm text-[var(--muted)]">
-                          <span className="inline-flex items-center gap-1.5">
-                            <Clock3 size={15} aria-hidden="true" />
-                            {formatMatchDate(match.startsAt)}
-                          </span>
-                          <span className="inline-flex items-center gap-1.5">
-                            <MapPin size={15} aria-hidden="true" />
-                            {match.venue}
-                          </span>
-                        </div>
-                        <MatchReviewSummary review={review} />
-                      </div>
-
-                      <div className="flex flex-col justify-between gap-3">
-                        <div className="flex justify-end">
-                          <button
-                            className="inline-flex items-center gap-2 rounded-md border border-[var(--line)] px-3 py-2 text-sm font-medium hover:bg-slate-50"
-                            onClick={() => {
-                              const existing = completionRecords[match.id];
-                              const review = reviewByMatchId.get(match.id);
-                              const prefill =
-                                existing?.userScore ??
-                                (review?.recommendation.available
-                                  ? review.recommendation.recommended.score
-                                  : "");
-                              setSelectedMatchId(match.id);
-                              setUserScoreInput(prefill);
-                              setUserScoreError("");
-                              setIsModalOpen(true);
-                            }}
-                            type="button"
-                          >
-                            Detalle
-                            <ChevronRight size={16} aria-hidden="true" />
-                          </button>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-2">
-                          <button
-                            className="inline-flex items-center justify-center gap-2 rounded-md border border-[var(--line)] px-3 py-2 text-sm font-medium hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                            disabled={!review?.recommendation.available}
-                            onClick={() => copyRecommendedScore(match.id)}
-                            type="button"
-                          >
-                            {copiedMatchId === match.id ? (
-                              <ClipboardCheck size={15} aria-hidden="true" />
-                            ) : (
-                              <Clipboard size={15} aria-hidden="true" />
-                            )}
-                            {copiedMatchId === match.id ? "Copiado" : "Copiar"}
-                          </button>
-                          <button
-                            className={`inline-flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium ${
-                              isCompleted
-                                ? "border border-emerald-200 bg-emerald-50 text-emerald-800"
-                                : "bg-[var(--accent)] text-white hover:bg-[var(--accent-strong)]"
-                            }`}
-                            onClick={() => toggleCompleted(match.id)}
-                            type="button"
-                          >
-                            <Check size={15} aria-hidden="true" />
-                            {isCompleted ? "Hecho" : "Completar"}
-                          </button>
-                        </div>
-                      </div>
-                    </article>
-                  );
-                })}
-              </div>
-            )}
-          </section>
-        </div>
-
-      </div>
-    </section>
-
-    {isModalOpen && selectedMatch ? (
-      <div
-        className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 px-4 py-8"
-        onClick={(e) => {
-          if (modalRef.current && !modalRef.current.contains(e.target as Node)) {
-            setIsModalOpen(false);
-          }
-        }}
-      >
-        <div
-          className="relative w-full max-w-2xl rounded-xl border border-[var(--line)] bg-white shadow-xl"
-          ref={modalRef}
-        >
-          <div className="flex items-start justify-between border-b border-[var(--line)] p-5">
-            <div>
-              <h2 className="text-xl font-semibold">
-                {selectedMatch.homeTeam} vs {selectedMatch.awayTeam}
-              </h2>
-              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-[var(--muted)]">
-                <span className="inline-flex items-center gap-1.5">
-                  <Clock3 size={14} aria-hidden="true" />
-                  {formatMatchDate(selectedMatch.startsAt)}
-                </span>
-                <span>{selectedMatch.phase}</span>
-                <span className="inline-flex items-center gap-1.5">
-                  <MapPin size={14} aria-hidden="true" />
-                  {selectedMatch.venue}
-                </span>
-              </div>
+              {userScoreError ? (
+                <p className="mt-2 text-xs text-red-600">{userScoreError}</p>
+              ) : (
+                <p className="mt-2 text-xs text-[var(--muted)]">
+                  Ingresá tu marcador o dejá vacío para marcar como completado
+                  sin puntaje.
+                </p>
+              )}
             </div>
-            <button
-              className="ml-4 flex-shrink-0 rounded-md p-1 hover:bg-slate-100"
-              onClick={() => setIsModalOpen(false)}
-              type="button"
-              aria-label="Cerrar"
-            >
-              <X size={20} />
-            </button>
-          </div>
 
-          <div className="border-b border-[var(--line)] p-5">
-            <h3 className="mb-3 text-sm font-semibold">Tu predicción</h3>
-            {completionRecords[selectedMatch.id]?.userScore ? (
-              <div className="mb-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-                Guardado: <span className="font-semibold">{completionRecords[selectedMatch.id].userScore}</span>
+            {selectedMatch.placeholder ? (
+              <div className="mx-5 mt-5 rounded-md border border-amber-200 bg-[var(--warning-bg)] p-3 text-sm leading-6 text-[var(--warning)]">
+                Este partido tiene participantes pendientes. Cuando se definan
+                los cruces, el dataset podra actualizarse sin cambiar el flujo.
               </div>
             ) : null}
-            <div className="flex gap-2">
-              <input
-                className="h-10 w-28 rounded-md border border-[var(--line)] px-3 text-sm outline-none focus:border-[var(--accent)]"
-                placeholder="ej. 2-1"
-                type="text"
-                value={userScoreInput}
-                onChange={(e) => {
-                  setUserScoreInput(e.target.value);
-                  setUserScoreError("");
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") saveMyPrediction(selectedMatch.id);
-                }}
+
+            <div className="p-5">
+              <OddsPanel
+                isLoading={isLoadingOdds}
+                odds={odds}
+                oddsError={oddsError}
+                onRetry={() => setOddsRefreshKey((value) => value + 1)}
+                winnerError={winnerError}
+                winnerPrediction={winnerPrediction}
+                correctScoreError={correctScoreError}
+                correctScorePrediction={correctScorePrediction}
+                finalRecommendation={finalRecommendation}
+                finalRecommendationError={finalRecommendationError}
               />
-              <button
-                className="inline-flex items-center gap-2 rounded-md bg-[var(--accent)] px-4 py-2 text-sm font-medium text-white hover:bg-[var(--accent-strong)]"
-                onClick={() => saveMyPrediction(selectedMatch.id)}
-                type="button"
-              >
-                <Check size={15} aria-hidden="true" />
-                Guardar predicción
-              </button>
             </div>
-            {userScoreError ? (
-              <p className="mt-2 text-xs text-red-600">{userScoreError}</p>
-            ) : (
-              <p className="mt-2 text-xs text-[var(--muted)]">
-                Ingresá tu marcador o dejá vacío para marcar como completado sin puntaje.
-              </p>
-            )}
-          </div>
-
-          {selectedMatch.placeholder ? (
-            <div className="mx-5 mt-5 rounded-md border border-amber-200 bg-[var(--warning-bg)] p-3 text-sm leading-6 text-[var(--warning)]">
-              Este partido tiene participantes pendientes. Cuando se definan los cruces,
-              el dataset podra actualizarse sin cambiar el flujo.
-            </div>
-          ) : null}
-
-          <div className="p-5">
-            <OddsPanel
-              isLoading={isLoadingOdds}
-              odds={odds}
-              oddsError={oddsError}
-              onRetry={() => setOddsRefreshKey((value) => value + 1)}
-              winnerError={winnerError}
-              winnerPrediction={winnerPrediction}
-              correctScoreError={correctScoreError}
-              correctScorePrediction={correctScorePrediction}
-              finalRecommendation={finalRecommendation}
-              finalRecommendationError={finalRecommendationError}
-            />
           </div>
         </div>
-      </div>
-    ) : null}
+      ) : null}
     </>
   );
 }
@@ -873,8 +936,12 @@ function OddsPanel({
   finalRecommendation: ScoreRecommendationResult | null;
   finalRecommendationError: string;
 }) {
-  const matchWinner = odds?.markets.find((market) => market.key === "match_winner");
-  const correctScore = odds?.markets.find((market) => market.key === "correct_score");
+  const matchWinner = odds?.markets.find(
+    (market) => market.key === "match_winner",
+  );
+  const correctScore = odds?.markets.find(
+    (market) => market.key === "correct_score",
+  );
   const totals = odds?.markets.find((market) => market.key === "totals");
 
   return (
@@ -892,7 +959,11 @@ function OddsPanel({
           onClick={onRetry}
           type="button"
         >
-          <RefreshCw className={isLoading ? "animate-spin" : ""} size={15} aria-hidden="true" />
+          <RefreshCw
+            className={isLoading ? "animate-spin" : ""}
+            size={15}
+            aria-hidden="true"
+          />
           {isLoading ? "Cargando" : "Reintentar"}
         </button>
       </div>
@@ -915,14 +986,18 @@ function OddsPanel({
             error={finalRecommendationError}
             recommendation={finalRecommendation}
           />
-          <WinnerPredictionCard error={winnerError} prediction={winnerPrediction} />
+          <WinnerPredictionCard
+            error={winnerError}
+            prediction={winnerPrediction}
+          />
           <CorrectScorePredictionCard
             error={correctScoreError}
             prediction={correctScorePrediction}
           />
 
           <div className="rounded-md border border-[var(--line)] p-3 text-xs leading-5 text-[var(--muted)]">
-            Fuente: {odds.source}. Generado: {formatMatchDate(odds.generatedAt)}.
+            Fuente: {odds.source}. Generado: {formatMatchDate(odds.generatedAt)}
+            .
           </div>
 
           {odds.warnings.length ? (
@@ -939,13 +1014,20 @@ function OddsPanel({
           ) : null}
 
           {matchWinner ? (
-            <MarketCard market={matchWinner} title="Ganador / empate / ganador" />
+            <MarketCard
+              market={matchWinner}
+              title="Ganador / empate / ganador"
+            />
           ) : (
             <MissingMarket label="ganador / empate / ganador" />
           )}
 
           {correctScore ? (
-            <MarketCard limit={5} market={correctScore} title="Resultado exacto" />
+            <MarketCard
+              limit={5}
+              market={correctScore}
+              title="Resultado exacto"
+            />
           ) : (
             <MissingMarket label="resultado exacto" />
           )}
@@ -982,7 +1064,9 @@ function FinalRecommendationCard({
     return (
       <div className="rounded-lg border border-[var(--line)] bg-slate-50 p-4">
         <h4 className="text-sm font-semibold">Recomendación final</h4>
-        <p className="mt-2 text-sm text-[var(--muted)]">{recommendation.reason}</p>
+        <p className="mt-2 text-sm text-[var(--muted)]">
+          {recommendation.reason}
+        </p>
         {recommendation.warnings.map((warning) => (
           <p className="mt-2 text-xs text-[var(--warning)]" key={warning}>
             {warning}
@@ -993,13 +1077,17 @@ function FinalRecommendationCard({
   }
 
   const scopeLabel =
-    recommendation.scope === "includes_extra_time" ? "Incluye prorroga" : "Solo 90 minutos";
+    recommendation.scope === "includes_extra_time"
+      ? "Incluye prorroga"
+      : "Solo 90 minutos";
 
   return (
     <div className="rounded-lg border border-zinc-300 bg-zinc-950 p-4 text-white">
       <div className="mb-3 flex items-start justify-between gap-3">
         <div>
-          <h4 className="text-sm font-semibold">Recomendación final para el prode</h4>
+          <h4 className="text-sm font-semibold">
+            Recomendación final para el prode
+          </h4>
           <p className="mt-1 text-xs text-zinc-300">{scopeLabel}</p>
         </div>
         {recommendation.usedFallback ? (
@@ -1014,9 +1102,13 @@ function FinalRecommendationCard({
       </div>
 
       <div className="rounded-md bg-white p-3 text-zinc-950">
-        <div className="text-xs font-medium text-zinc-500">Marcador recomendado</div>
+        <div className="text-xs font-medium text-zinc-500">
+          Marcador recomendado
+        </div>
         <div className="mt-1 flex items-end justify-between gap-3">
-          <div className="text-4xl font-semibold">{recommendation.recommended.score}</div>
+          <div className="text-4xl font-semibold">
+            {recommendation.recommended.score}
+          </div>
           <div className="text-right">
             <div className="text-xs text-zinc-500">Puntos esperados</div>
             <div className="text-xl font-semibold">
@@ -1026,12 +1118,16 @@ function FinalRecommendationCard({
         </div>
       </div>
 
-      <p className="mt-3 text-sm leading-6 text-zinc-100">{recommendation.explanation}</p>
+      <p className="mt-3 text-sm leading-6 text-zinc-100">
+        {recommendation.explanation}
+      </p>
 
       <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
         <div className="rounded-md bg-white/10 p-2">
           <div className="text-zinc-300">Signo</div>
-          <div className="mt-1 font-semibold">{recommendation.recommended.signLabel}</div>
+          <div className="mt-1 font-semibold">
+            {recommendation.recommended.signLabel}
+          </div>
         </div>
         <div className="rounded-md bg-white/10 p-2">
           <div className="text-zinc-300">Prob. exacta</div>
@@ -1047,14 +1143,16 @@ function FinalRecommendationCard({
         </div>
         <div className="rounded-md bg-white/10 p-2">
           <div className="text-zinc-300">Exacto más probable</div>
-          <div className="mt-1 font-semibold">{recommendation.mostLikelyExactScore.label}</div>
+          <div className="mt-1 font-semibold">
+            {recommendation.mostLikelyExactScore.label}
+          </div>
         </div>
       </div>
 
       {recommendation.differsFromMostLikelyExact ? (
         <div className="mt-3 rounded-md border border-amber-300 bg-amber-100 p-2 text-xs leading-5 text-amber-950">
-          La recomendación final difiere del marcador exacto más probable individualmente
-          porque prioriza el puntaje esperado total.
+          La recomendación final difiere del marcador exacto más probable
+          individualmente porque prioriza el puntaje esperado total.
         </div>
       ) : null}
 
@@ -1074,7 +1172,9 @@ function FinalRecommendationCard({
                     ? "bg-emerald-300"
                     : "bg-white/50"
                 }`}
-                style={{ width: `${Math.max((candidate.expectedPoints / 6) * 100, 3)}%` }}
+                style={{
+                  width: `${Math.max((candidate.expectedPoints / 6) * 100, 3)}%`,
+                }}
               />
             </div>
           </div>
@@ -1131,7 +1231,9 @@ function CorrectScorePredictionCard({
   }
 
   const scopeLabel =
-    prediction.scope === "includes_extra_time" ? "Incluye prorroga" : "Solo 90 minutos";
+    prediction.scope === "includes_extra_time"
+      ? "Incluye prorroga"
+      : "Solo 90 minutos";
 
   return (
     <div className="rounded-lg border border-sky-200 bg-sky-50 p-4">
@@ -1148,16 +1250,22 @@ function CorrectScorePredictionCard({
       </div>
 
       <div className="rounded-md bg-white p-3">
-        <div className="text-xs font-medium text-[var(--muted)]">Marcador recomendado</div>
+        <div className="text-xs font-medium text-[var(--muted)]">
+          Marcador recomendado
+        </div>
         <div className="mt-1 flex items-end justify-between gap-3">
-          <div className="text-3xl font-semibold">{prediction.recommended.label}</div>
+          <div className="text-3xl font-semibold">
+            {prediction.recommended.label}
+          </div>
           <div className="text-lg font-semibold">
             {formatProbability(prediction.recommended.probability)}
           </div>
         </div>
       </div>
 
-      <p className="mt-3 text-sm leading-6 text-sky-950">{prediction.explanation}</p>
+      <p className="mt-3 text-sm leading-6 text-sky-950">
+        {prediction.explanation}
+      </p>
 
       <div className="mt-3 space-y-2">
         {prediction.alternatives.map((outcome) => (
@@ -1169,7 +1277,9 @@ function CorrectScorePredictionCard({
             <div className="h-2 overflow-hidden rounded-full bg-white">
               <div
                 className={`h-full rounded-full ${
-                  outcome.key === prediction.recommended.key ? "bg-sky-700" : "bg-sky-200"
+                  outcome.key === prediction.recommended.key
+                    ? "bg-sky-700"
+                    : "bg-sky-200"
                 }`}
                 style={{ width: `${Math.max(outcome.probability * 100, 3)}%` }}
               />
@@ -1192,9 +1302,12 @@ function CorrectScorePredictionCard({
       ) : null}
 
       <div className="mt-3 text-xs leading-5 text-sky-900">
-        Consenso usado: {prediction.bookmakerCount}/{prediction.expectedBookmakerCount} casas.
-        Ultima actualización:{" "}
-        {prediction.lastUpdatedAt ? formatMatchDate(prediction.lastUpdatedAt) : "sin dato"}.
+        Consenso usado: {prediction.bookmakerCount}/
+        {prediction.expectedBookmakerCount} casas. Ultima actualización:{" "}
+        {prediction.lastUpdatedAt
+          ? formatMatchDate(prediction.lastUpdatedAt)
+          : "sin dato"}
+        .
       </div>
     </div>
   );
@@ -1234,7 +1347,9 @@ function WinnerPredictionCard({
   }
 
   const scopeLabel =
-    prediction.scope === "includes_extra_time" ? "Incluye prorroga" : "Solo 90 minutos";
+    prediction.scope === "includes_extra_time"
+      ? "Incluye prorroga"
+      : "Solo 90 minutos";
 
   return (
     <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4">
@@ -1251,16 +1366,22 @@ function WinnerPredictionCard({
       </div>
 
       <div className="rounded-md bg-white p-3">
-        <div className="text-xs font-medium text-[var(--muted)]">Recomendación</div>
+        <div className="text-xs font-medium text-[var(--muted)]">
+          Recomendación
+        </div>
         <div className="mt-1 flex items-end justify-between gap-3">
-          <div className="text-2xl font-semibold">{prediction.recommended.label}</div>
+          <div className="text-2xl font-semibold">
+            {prediction.recommended.label}
+          </div>
           <div className="text-lg font-semibold">
             {formatProbability(prediction.recommended.probability)}
           </div>
         </div>
       </div>
 
-      <p className="mt-3 text-sm leading-6 text-emerald-950">{prediction.explanation}</p>
+      <p className="mt-3 text-sm leading-6 text-emerald-950">
+        {prediction.explanation}
+      </p>
 
       <div className="mt-3 space-y-2">
         {prediction.alternatives.map((outcome) => (
@@ -1297,9 +1418,12 @@ function WinnerPredictionCard({
       ) : null}
 
       <div className="mt-3 text-xs leading-5 text-emerald-900">
-        Consenso usado: {prediction.bookmakerCount}/{prediction.expectedBookmakerCount} casas.
-        Ultima actualización:{" "}
-        {prediction.lastUpdatedAt ? formatMatchDate(prediction.lastUpdatedAt) : "sin dato"}.
+        Consenso usado: {prediction.bookmakerCount}/
+        {prediction.expectedBookmakerCount} casas. Ultima actualización:{" "}
+        {prediction.lastUpdatedAt
+          ? formatMatchDate(prediction.lastUpdatedAt)
+          : "sin dato"}
+        .
       </div>
     </div>
   );
@@ -1314,9 +1438,13 @@ function MarketCard({
   title: string;
   limit?: number;
 }) {
-  const visibleOutcomes = limit ? market.outcomes.slice(0, limit) : market.outcomes;
+  const visibleOutcomes = limit
+    ? market.outcomes.slice(0, limit)
+    : market.outcomes;
   const scopeLabel =
-    market.scope === "includes_extra_time" ? "Incluye prorroga" : "Solo 90 minutos";
+    market.scope === "includes_extra_time"
+      ? "Incluye prorroga"
+      : "Solo 90 minutos";
 
   return (
     <div className="rounded-lg border border-[var(--line)] bg-white p-4">
@@ -1352,9 +1480,13 @@ function MarketCard({
 
       {market.incomplete || market.stale || market.scope === "90_minutes" ? (
         <div className="mt-3 text-xs leading-5 text-[var(--muted)]">
-          {market.incomplete ? `Faltan: ${market.missingBookmakers.join(", ")}. ` : ""}
+          {market.incomplete
+            ? `Faltan: ${market.missingBookmakers.join(", ")}. `
+            : ""}
           {market.stale ? "Hay datos antiguos. " : ""}
-          {market.scope === "90_minutes" ? "No equivale necesariamente al reglamento con prorroga." : ""}
+          {market.scope === "90_minutes"
+            ? "No equivale necesariamente al reglamento con prorroga."
+            : ""}
         </div>
       ) : null}
     </div>
@@ -1385,7 +1517,11 @@ function Metric({ label, value }: { label: string; value: number }) {
   );
 }
 
-function MatchReviewSummary({ review }: { review: MatchReviewItem | undefined }) {
+function MatchReviewSummary({
+  review,
+}: {
+  review: MatchReviewItem | undefined;
+}) {
   if (!review || !review.recommendation.available) {
     return (
       <div className="mt-3 rounded-md border border-[var(--line)] bg-slate-50 p-3 text-sm text-[var(--muted)]">
@@ -1426,7 +1562,9 @@ function StatusBadge({ status }: { status: Match["status"] }) {
   };
 
   return (
-    <span className={`rounded-md px-2 py-1 text-xs font-medium ${styles[status]}`}>
+    <span
+      className={`rounded-md px-2 py-1 text-xs font-medium ${styles[status]}`}
+    >
       {status}
     </span>
   );
@@ -1448,7 +1586,9 @@ function sortMatches(
 ) {
   return [...matches].sort((a, b) => {
     if (sortBy === "fase") {
-      return a.phase.localeCompare(b.phase) || a.startsAt.localeCompare(b.startsAt);
+      return (
+        a.phase.localeCompare(b.phase) || a.startsAt.localeCompare(b.startsAt)
+      );
     }
 
     if (sortBy === "confianza") {
